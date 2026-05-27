@@ -1,22 +1,43 @@
+import { existsSync } from "node:fs";
 import type { DefaultTheme } from "vitepress";
+
+const dauTuContentRoot = new URL("../../dau-tu/", import.meta.url);
+
+const dauTuContentItem = (
+  part: string,
+  slug: string,
+  text: string,
+  file: string,
+): DefaultTheme.SidebarItem | undefined => {
+  if (!existsSync(new URL(`${part}/${slug}/${file}.md`, dauTuContentRoot))) {
+    return undefined;
+  }
+
+  return {
+    text,
+    link: `/dau-tu/${part}/${slug}/${file}`,
+  };
+};
 
 const dauTuDay = (
   text: string,
   part: string,
   slug: string,
-): DefaultTheme.SidebarItem => ({
-  text,
-  link: `/dau-tu/${part}/${slug}/lesson`,
-});
+): DefaultTheme.SidebarItem => {
+  const items = [
+    dauTuContentItem(part, slug, "Lesson", "lesson"),
+    dauTuContentItem(part, slug, "Document", "document"),
+    dauTuContentItem(part, slug, "Exercises", "exercises"),
+  ].filter((item): item is DefaultTheme.SidebarItem => Boolean(item));
+
+  return {
+    text,
+    collapsed: true,
+    items,
+  };
+};
 
 export const dauTuSidebar: DefaultTheme.SidebarItem[] = [
-  {
-    text: "Đầu tư A-Z",
-    items: [
-      { text: "Overview", link: "/dau-tu/" },
-      { text: "Review tổng thể", link: "/dau-tu/review-task" },
-    ],
-  },
   {
     text: "Phần 1 - Kinh tế nền tảng",
     items: [
