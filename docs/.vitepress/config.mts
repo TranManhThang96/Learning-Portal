@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import { dauTuSidebar } from "./sidebars/dau-tu";
 import { pythonSidebar } from "./sidebars/python";
 
 // https://vitepress.dev/reference/site-config
@@ -62,7 +63,7 @@ export default defineConfig({
           { text: "Web3", link: "/web3-solidity/" },
           { text: "Git", link: "/git/" },
           { text: "Obsidian", link: "/obsidian/" },
-          { text: "Investment", link: "/dau-tu/" },
+          { text: "Đầu tư", link: "/dau-tu/" },
           { text: "MMO", link: "/mmo/" },
           { text: "Manager with AI", link: "/manager-with-ai/" },
         ],
@@ -70,6 +71,7 @@ export default defineConfig({
     ],
 
     sidebar: {
+      "/dau-tu/": dauTuSidebar,
       "/python/": pythonSidebar,
       "/redis/": [
         {

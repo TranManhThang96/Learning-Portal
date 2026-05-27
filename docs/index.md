@@ -11,11 +11,11 @@ hero:
     alt: Learning Portal
   actions:
     - theme: brand
-      text: Bắt đầu với Python
-      link: /python/
+      text: Học đầu tư A-Z
+      link: /dau-tu/
     - theme: alt
-      text: Xem lộ trình 35 ngày
-      link: /python/day35-review-tong-the-roadmap/lesson
+      text: Học Python
+      link: /python/
 
 features:
   - title: Roadmap có thứ tự
