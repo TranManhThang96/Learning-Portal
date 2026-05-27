@@ -3,9 +3,13 @@ import { pythonSidebar } from "./sidebars/python";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "My Learning Portal",
+  title: "Learning Portal",
   description:
-    "Personal learning portal for programming, backend, data and DevOps",
+    "Lộ trình học lập trình, backend, data, DevOps và AI theo nhịp thực chiến",
+  head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
+    ["link", { rel: "shortcut icon", href: "/favicon.ico" }],
+  ],
   ignoreDeadLinks: "localhostLinks",
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config

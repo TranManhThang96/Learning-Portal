@@ -109,4 +109,36 @@ jobs:
           set -euo pipefail
 
           ssh -i ~/.ssh/deploy_key -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" \
-            "cd '$VPS_DEPLOY_PATH' && PORT='${APP_PORT:-4173}' pm2 startOrReload ecosystem.config.cjs --env production && pm2 save"
+            "bash -s --" "$VPS_DEPLOY_PATH" "${APP_PORT:-4173}" <<'REMOTE'
+          set -euo pipefail
+
+          deploy_path="$1"
+          app_port="$2"
+
+          if [ -s "$HOME/.nvm/nvm.sh" ]; then
+            . "$HOME/.nvm/nvm.sh"
+            nvm use --silent default >/dev/null 2>&1 || true
+          fi
+
+          export PATH="$HOME/.local/share/pnpm:$HOME/.npm-global/bin:$HOME/.npm/bin:$HOME/.nvm/current/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+          pm2_bin="$(command -v pm2 || true)"
+          if [ -z "$pm2_bin" ]; then
+            for candidate in "$HOME"/.nvm/versions/node/*/bin/pm2 "$HOME"/.npm-global/bin/pm2 "$HOME"/.local/share/pnpm/pm2 /usr/local/bin/pm2 /usr/bin/pm2; do
+              if [ -x "$candidate" ]; then
+                pm2_bin="$candidate"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$pm2_bin" ]; then
+            echo "PM2 was not found on the VPS PATH for this SSH session." >&2
+            echo "Install it on the VPS with: npm install -g pm2" >&2
+            exit 127
+          fi
+
+          cd "$deploy_path"
+          PORT="$app_port" "$pm2_bin" startOrReload ecosystem.config.cjs --env production
+          "$pm2_bin" save
+          REMOTE
