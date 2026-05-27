@@ -1,0 +1,59 @@
+#separator:tab
+#html:false
+#notetype column:1
+#deck column:2
+#tags column:5
+Basic	Python::Day01	uv là gì và tại sao nên dùng?	Package manager Python viết bằng Rust (2024), nhanh hơn pip 10-100x. Tự động quản lý .venv và uv.lock. Syntax gần với npm.	python day01 uv
+Basic	Python::Day01	Tại sao cần pyenv/asdf/uv python?	Python 2.x và 3.x incompatible; mỗi project cần version riêng; system Python thường outdated. Tool giúp pin và switch nhanh giữa các versions.	python day01 version-manager
+Basic	Python::Day01	pyproject.toml tương đương file nào trong NodeJS?	package.json — chứa metadata, dependencies, dev dependencies, và config cho tools (ruff, mypy, ...).	python day01 config
+Basic	Python::Day01	uv.lock / poetry.lock tương đương file nào trong NodeJS?	package-lock.json hoặc yarn.lock — pin chính xác versions của tất cả dependencies (kể cả transitive).	python day01 lockfile
+Basic	Python::Day01	Virtual environment trong Python khác node_modules thế nào?	node_modules nằm trong project (mỗi project tách biệt). Virtualenv là thư mục Python độc lập, thường ở .venv/ trong project hoặc ~/.venvs/.	python day01 venv
+Basic	Python::Day01	ruff thay thế những tool nào?	ESLint + Prettier cho Python: thay flake8 + black + isort. Một tool làm linting + formatting + import sort, viết bằng Rust nên nhanh 10x.	python day01 ruff
+Basic	Python::Day01	mypy là gì? Khi nào nên bật strict?	Static type checker chính thức cho Python — kiểm tra type hints, tương đương TypeScript compiler. Nên bật `strict = true` từ ngày đầu (dễ hơn enable sau).	python day01 mypy
+Basic	Python::Day01	Phân biệt pyenv global vs local vs shell?	global: default cho user (~/.pyenv/version). local: pin cho project (.python-version, commit vào repo). shell: tạm thời cho session (env var PYENV_VERSION). Ưu tiên: shell > local > global.	python day01 pyenv
+Basic	Python::Day01	Tại sao không nên `pip install` trực tiếp ngoài venv?	Pollute global Python, gây conflict giữa projects, system Python có thể không cho phép. Luôn dùng virtualenv / uv / Poetry.	python day01 best-practice
+Basic	Python::Day01	Tại sao không nên commit thư mục .venv?	Repo nặng GB, paths khác nhau mỗi máy/OS, không reproducible. Thêm `.venv` vào `.gitignore`. Lock file (uv.lock) mới là thứ cần commit.	python day01 git
+Basic	Python::Day01	pipx dùng để làm gì?	Install CLI tools Python globally trong môi trường isolated (giống `npm install -g`). Ví dụ: `pipx install poetry`, `pipx install black`.	python day01 pipx
+Basic	Python::Day01	pre-commit là gì?	Framework chạy git hooks tự động trước mỗi commit (tương đương Husky trong Node.js). Đảm bảo lint, format, type check trước khi code vào repo.	python day01 pre-commit
+Basic	Python::Day01	So sánh uv vs Poetry — khi nào dùng cái nào?	uv: nhanh hơn 10-100x (Rust), syntax gần npm, mới (2024) → projects mới. Poetry: mature, plugin phong phú, docs tốt, chậm hơn → legacy projects hoặc khi cần plugin đặc thù.	python day01 uv poetry
+Basic	Python::Day01	breakpoint() khác print() debug ở chỗ nào?	breakpoint() (Python 3.7+) mở interactive debugger pdb tại chỗ — cho phép inspect biến, step through code, xem call stack. print() chỉ in giá trị tĩnh tại 1 thời điểm.	python day01 debug
+Basic	Python::Day01	Liệt kê 6 lệnh pdb cơ bản nhất?	n (next - không step vào function), s (step into), c (continue), p <expr> (print), l (list code), q (quit). Bonus: w (where = call stack), pp (pretty print).	python day01 pdb
+Basic	Python::Day01	icecream (ic) hơn print() ở chỗ nào?	ic(var) tự động in cả tên variable + giá trị, không cần viết label thủ công. Ví dụ `ic(user_id)` → `ic| user_id: 42`. Đỡ phải viết `print("user_id:", user_id)`.	python day01 icecream debug
+Basic	Python::Day01	Pyright khác mypy thế nào?	Pyright (Microsoft) viết bằng TypeScript, nhanh hơn mypy, được dùng trong Pylance VS Code extension. mypy là implementation chính thức của Python team. Cùng làm static type checking.	python day01 type-check
+Basic	Python::Day01	Khi nào dùng `uv sync --locked` thay vì `uv sync`?	Trong CI/CD — `--locked` fail nếu uv.lock không khớp pyproject.toml (giống tinh thần `npm ci`). Đảm bảo build reproducible trên mọi máy.	python day01 ci
+Basic	Python::Day01	Tại sao không nên dùng `pip freeze > requirements.txt`?	Không pin transitive dependencies đúng cách → deploy có thể fail vì version drift. Dùng poetry.lock hoặc uv.lock — lock đầy đủ cả tree dependencies.	python day01 deps
+Basic	Python::Day01	Target Python version cho course này là gì?	Python 3.12.x — ổn định, đủ modern syntax. Trong pyproject.toml: `requires-python = ">=3.12,<3.13"` để pin major/minor cho cả team và CI.	python day01 version
+Basic	Python::Day01	Progression đúng khi debug Python?	print() → ic() → breakpoint() → VS Code debugger. print: quick check; ic: tự in tên var; breakpoint: inspect state phức tạp; VS Code: step through visual + watch.	python day01 debug
+Basic	Python::Day01	Bug điển hình trong if/elif chain là gì?	Dùng nhiều `if` riêng lẻ thay vì `elif` — `else` chỉ gắn với `if` cuối cùng, không gắn với toàn chain. Cần `elif` để đảm bảo chỉ 1 branch chạy.	python day01 control-flow
+Cloze	Python::Day01	Lệnh tạo project mới với uv: {{c1::uv init}} my-project		python day01 uv command
+Cloze	Python::Day01	Lệnh thêm runtime dependency: {{c1::uv add}} fastapi		python day01 uv command
+Cloze	Python::Day01	Lệnh thêm dev dependency: {{c1::uv add --dev}} pytest ruff mypy		python day01 uv command
+Cloze	Python::Day01	Lệnh chạy script trong venv (không cần activate): {{c1::uv run}} python main.py		python day01 uv command
+Cloze	Python::Day01	Pin Python runtime cho project: {{c1::uv python pin}} 3.12		python day01 uv command
+Cloze	Python::Day01	Trong CI/CD dùng {{c1::uv sync --locked}} để fail nếu lock file lệch với pyproject.toml.		python day01 ci
+Cloze	Python::Day01	Field pin Python version trong pyproject.toml: requires-python = {{c1::">=3.12,<3.13"}}		python day01 config
+Cloze	Python::Day01	File commit vào repo để team cùng pin Python version: {{c1::.python-version}}		python day01 config
+Cloze	Python::Day01	Lệnh activate virtualenv thủ công Linux/Mac: {{c1::source .venv/bin/activate}}		python day01 venv
+Cloze	Python::Day01	Lệnh tạo virtualenv thủ công không qua uv: python -m {{c1::venv}} .venv		python day01 venv
+Cloze	Python::Day01	Cấu hình ruff trong pyproject.toml: line-length = {{c1::88}}, target-version = "py312"		python day01 ruff
+Cloze	Python::Day01	Bật mypy strict trong pyproject.toml: [tool.mypy] {{c1::strict = true}}		python day01 mypy
+Cloze	Python::Day01	Section khai báo dev dependencies trong pyproject.toml: {{c1::[dependency-groups]}}		python day01 config
+Cloze	Python::Day01	Lệnh cài pre-commit hooks vào git repo: {{c1::pre-commit install}}		python day01 pre-commit
+Cloze	Python::Day01	Lệnh chạy pre-commit thủ công trên toàn project: {{c1::pre-commit run --all-files}}		python day01 pre-commit
+Cloze	Python::Day01	Hàm dừng debugger trong Python 3.7+: {{c1::breakpoint()}}		python day01 debug
+Cloze	Python::Day01	Lệnh pdb xem source code quanh vị trí hiện tại: {{c1::l}}		python day01 pdb
+Cloze	Python::Day01	Lệnh pdb xem call stack: {{c1::w}}		python day01 pdb
+Cloze	Python::Day01	Lệnh pdb step vào trong function: {{c1::s}}, không step vào: {{c2::n}}		python day01 pdb
+Cloze	Python::Day01	Trong icecream, gọi {{c1::ic(variable)}} để debug — tự in tên + giá trị.		python day01 icecream
+Cloze	Python::Day01	Ruff rule sets nên enable: E, F, I, {{c1::UP}} (pyupgrade), B (bugbear), SIM (simplify)		python day01 ruff
+Cloze	Python::Day01	Tool Python tương đương `npm install -g`: {{c1::pipx}}		python day01 pipx
+Cloze	Python::Day01	Formatter ID của Ruff trong VS Code settings: {{c1::charliermarsh.ruff}}		python day01 vscode
+Cloze	Python::Day01	Lệnh xem packages đã cài trong project uv: {{c1::uv pip list}}		python day01 uv command
+Cloze	Python::Day01	So sánh: nvm ↔ {{c1::pyenv}} (hoặc asdf / uv python)		python day01 compare
+Cloze	Python::Day01	So sánh: npm/yarn ↔ {{c1::uv}} hoặc Poetry		python day01 compare
+Cloze	Python::Day01	So sánh: ESLint ↔ {{c1::ruff}}, Prettier ↔ {{c2::ruff format}} (hoặc black)		python day01 compare
+Cloze	Python::Day01	So sánh: TypeScript compiler ↔ {{c1::mypy}} (hoặc pyright)		python day01 compare
+Cloze	Python::Day01	So sánh: Husky ↔ {{c1::pre-commit}}		python day01 compare
+Cloze	Python::Day01	Lệnh cài uv qua curl: curl -LsSf {{c1::https://astral.sh/uv/install.sh}} | sh		python day01 install
+Cloze	Python::Day01	Pyenv: pin version cho project hiện tại dùng `pyenv {{c1::local}} 3.12.8` — ghi vào file `.python-version`.		python day01 pyenv
+Cloze	Python::Day01	Pyenv: set Python default toàn user dùng `pyenv {{c1::global}} 3.12.8`.		python day01 pyenv
