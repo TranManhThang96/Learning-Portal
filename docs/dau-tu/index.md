@@ -26,10 +26,32 @@ Nội dung chỉ phục vụ mục đích giáo dục, không phải khuyến ng
 | Phần 6 | 53-62 | Crypto, blockchain, DeFi, tokenomics, security, scam và market cycle |
 | Bổ sung | 63 | Công cụ và nền tảng giao dịch thực tế |
 
-## Cách học đề xuất
+## Phân tích 80/20
 
-1. Học lần lượt từ ngày 1 đến ngày 63, không nhảy thẳng vào trading nếu chưa qua phần rủi ro và nền tảng.
-2. Với mỗi ngày, đọc `lesson.md` trước, sau đó dùng `document.md` như cheat sheet nếu có.
-3. Làm `exercises.md` bằng dữ liệu giả lập hoặc tài khoản demo trước khi dùng tiền thật.
-4. Ghi lại giả định, kết quả và lỗi trong Investment Journal hoặc Trading Journal.
-5. Khi gặp ví dụ có dữ liệu thị trường, luôn kiểm tra lại nguồn hiện hành trước khi ra quyết định.
+Xem phân tích chi tiết: [80-20 Learning Priority](./80-20-phan-tich-uu-tien.md)
+
+**Tóm tắt 80/20:** Chỉ ~25 ngày (40% khóa học) mang lại ~80% giá trị thực tế. Ưu tiên tuyệt đối: Risk Management (Day 19), đọc báo cáo tài chính (Day 20–22), Trading Psychology (Day 50).
+
+## Cách học đề xuất (theo 80/20)
+
+### Nhóm A — Bắt buộc học trước (học kỹ, ưu tiên số 1)
+Kinh tế nền tảng: Day 1 → 2 → 3 → 5 → 6 → 8 → 9 → 10 → 11 → 16
+Risk & FA cốt lõi: Day 19 → 20 → 21 → 22
+TA cốt lõi: Day 26 → 28 → 30 → 32
+Thực hành: Day 33 → 37 → 38 → 41 → 42 → 50 → 63
+
+### Nhóm B — Nên học sớm (học sau nhóm A)
+Day 4, 12, 13, 15, 18, 23, 24, 25, 27, 29, 31, 35, 36, 39, 49, 57, 59, 62
+
+### Nhóm C — Học sau khi có danh mục thực tế
+Forex (43–52) và Crypto (53–62) là module độc lập — chỉ học nếu cần.
+
+### Nhóm D — Đọc lướt / tra cứu
+Day 17, 46, 54, 55, 61
+
+### Ghi chú
+- Học lần lượt từ ngày 1 đến ngày 63, không nhảy thẳng vào trading nếu chưa qua phần rủi ro và nền tảng.
+- Với mỗi ngày, đọc `lesson.md` trước, sau đó dùng `document.md` như cheat sheet nếu có.
+- Làm `exercises.md` bằng dữ liệu giả lập hoặc tài khoản demo trước khi dùng tiền thật.
+- Ghi lại giả định, kết quả và lỗi trong Investment Journal hoặc Trading Journal.
+- Khi gặp ví dụ có dữ liệu thị trường, luôn kiểm tra lại nguồn hiện hành trước khi ra quyết định.

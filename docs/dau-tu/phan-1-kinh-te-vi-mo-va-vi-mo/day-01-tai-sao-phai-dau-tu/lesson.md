@@ -17,7 +17,7 @@ Hãy tưởng tượng bạn có **100 triệu đồng** để trong két sắt 
 
 **Câu trả lời là: Không.**
 
-Năm 2014, 100 triệu đồng có thể mua được khoảng **250 chỉ vàng** (khi vàng ~4 triệu/chỉ). Năm 2024, 100 triệu đó chỉ mua được khoảng **100 chỉ vàng** (khi vàng ~8-9 triệu/chỉ). Cùng một tờ giấy bạc, nhưng sức mua đã giảm đi một nửa.
+Năm 2014, 100 triệu đồng có thể mua được khoảng **25 chỉ vàng** (khi vàng ~4 triệu/chỉ). Năm 2024, 100 triệu đó chỉ mua được khoảng **12 chỉ vàng** (khi vàng ~8-9 triệu/chỉ). Cùng một tờ giấy bạc, nhưng sức mua đã giảm đi một nửa.
 
 Đây chính là **Inflation** — kẻ thù thầm lặng nhất của tiền bạc.
 

@@ -1,0 +1,1 @@
+Sử dung nguyên tắc 80-20 theo prompt 80-20-prompt.md phân tích và lấy kết quả các khóa học docs/dau-tu và docs/python. Sau đó cập nhật file docs/dau-tu/index.md và docs/python/index.md từ kết quả phân tích được.
