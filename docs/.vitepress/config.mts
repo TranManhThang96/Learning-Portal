@@ -2,6 +2,7 @@ import { defineConfig } from "vitepress";
 import { dauTuSidebar } from "./sidebars/dau-tu";
 import { pythonSidebar } from "./sidebars/python";
 import { aiEngineerSidebar } from "./sidebars/ai-engineer";
+import { claudeLessionSidebar } from "./sidebars/claude-lession";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -58,6 +59,7 @@ export default defineConfig({
         text: "More",
         items: [
           { text: "AI Engineer", link: "/ai-engineer/" },
+          { text: "Claude Code", link: "/claude-lession/" },
           { text: "DSA", link: "/dsa/" },
           { text: "Frontend", link: "/frontend/" },
           { text: "Security", link: "/security-develop/" },
@@ -75,6 +77,7 @@ export default defineConfig({
       "/dau-tu/": dauTuSidebar,
       "/python/": pythonSidebar,
       "/ai-engineer/": aiEngineerSidebar,
+      "/claude-lession/": claudeLessionSidebar,
       "/redis/": [
         {
           text: "Redis Learning Plan",
