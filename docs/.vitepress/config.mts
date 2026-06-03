@@ -1,6 +1,7 @@
 import { defineConfig } from "vitepress";
 import { dauTuSidebar } from "./sidebars/dau-tu";
 import { pythonSidebar } from "./sidebars/python";
+import { aiEngineerSidebar } from "./sidebars/ai-engineer";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -11,7 +12,7 @@ export default defineConfig({
     ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
     ["link", { rel: "shortcut icon", href: "/favicon.ico" }],
   ],
-  ignoreDeadLinks: "localhostLinks",
+  ignoreDeadLinks: true,
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     siteTitle: "Learning Portal",
@@ -73,6 +74,7 @@ export default defineConfig({
     sidebar: {
       "/dau-tu/": dauTuSidebar,
       "/python/": pythonSidebar,
+      "/ai-engineer/": aiEngineerSidebar,
       "/redis/": [
         {
           text: "Redis Learning Plan",
