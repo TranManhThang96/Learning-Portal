@@ -6,6 +6,7 @@ import { claudeLessionSidebar } from "./sidebars/claude-lession";
 import { k3sK8sSidebar } from "./sidebars/k3s-k8s";
 import { messageBrokerSidebar } from "./sidebars/message-broker";
 import { devopsSidebar } from "./sidebars/devops";
+import { terraformAnsibleArgoCDSidebar } from "./sidebars/terraform-ansible-argoCD";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -85,6 +86,7 @@ export default defineConfig({
       "/k3s-k8s/": k3sK8sSidebar,
       "/message-broker/": messageBrokerSidebar,
       "/devops/": devopsSidebar,
+      "/terraform-ansible-argoCD/": terraformAnsibleArgoCDSidebar,
       "/redis/": [
         {
           text: "Redis Learning Plan",
