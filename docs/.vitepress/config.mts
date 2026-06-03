@@ -4,6 +4,7 @@ import { pythonSidebar } from "./sidebars/python";
 import { aiEngineerSidebar } from "./sidebars/ai-engineer";
 import { claudeLessionSidebar } from "./sidebars/claude-lession";
 import { k3sK8sSidebar } from "./sidebars/k3s-k8s";
+import { messageBrokerSidebar } from "./sidebars/message-broker";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -80,6 +81,7 @@ export default defineConfig({
       "/ai-engineer/": aiEngineerSidebar,
       "/claude-lession/": claudeLessionSidebar,
       "/k3s-k8s/": k3sK8sSidebar,
+      "/message-broker/": messageBrokerSidebar,
       "/redis/": [
         {
           text: "Redis Learning Plan",

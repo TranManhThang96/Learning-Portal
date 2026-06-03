@@ -19,12 +19,15 @@ hero:
     - theme: alt
       text: AI Engineer
       link: /ai-engineer/
-    - theme: brand
+    - theme: alt
       text: Học Claude Code
       link: /claude-lession/
     - theme: alt
       text: Học Kubernetes (K3s/K8s)
       link: /k3s-k8s/
+    - theme: alt
+      text: Học Message Broker
+      link: /message-broker/
 
 features:
   - title: Roadmap có thứ tự
