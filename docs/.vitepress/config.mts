@@ -5,6 +5,7 @@ import { aiEngineerSidebar } from "./sidebars/ai-engineer";
 import { claudeLessionSidebar } from "./sidebars/claude-lession";
 import { k3sK8sSidebar } from "./sidebars/k3s-k8s";
 import { messageBrokerSidebar } from "./sidebars/message-broker";
+import { devopsSidebar } from "./sidebars/devops";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -16,6 +17,7 @@ export default defineConfig({
     ["link", { rel: "shortcut icon", href: "/favicon.ico" }],
   ],
   ignoreDeadLinks: true,
+
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     siteTitle: "Learning Portal",
@@ -82,6 +84,7 @@ export default defineConfig({
       "/claude-lession/": claudeLessionSidebar,
       "/k3s-k8s/": k3sK8sSidebar,
       "/message-broker/": messageBrokerSidebar,
+      "/devops/": devopsSidebar,
       "/redis/": [
         {
           text: "Redis Learning Plan",

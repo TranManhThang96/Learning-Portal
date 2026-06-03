@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Learning Portal"
   text: "Lộ trình học lập trình, backend và AI theo nhịp thực chiến"
-  tagline: "Từ Python core đến Kubernetes, AI Engineer, Claude Code và production system: mỗi bài học đi kèm giải thích, bài tập và tài nguyên để biến kiến thức thành năng lực triển khai."
+  tagline: "Từ Python core đến DevOps/SRE, Kubernetes, AI Engineer và production system: mỗi bài học đi kèm giải thích, bài tập và tài nguyên để biến kiến thức thành năng lực triển khai."
   image:
     src: /learning-portal-mark.svg
     alt: Learning Portal
@@ -28,6 +28,9 @@ hero:
     - theme: alt
       text: Học Message Broker
       link: /message-broker/
+    - theme: alt
+      text: Học DevOps/SRE
+      link: /devops/
 
 features:
   - title: Roadmap có thứ tự
