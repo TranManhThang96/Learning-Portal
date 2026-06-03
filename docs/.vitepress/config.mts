@@ -7,6 +7,7 @@ import { k3sK8sSidebar } from "./sidebars/k3s-k8s";
 import { messageBrokerSidebar } from "./sidebars/message-broker";
 import { devopsSidebar } from "./sidebars/devops";
 import { terraformAnsibleArgoCDSidebar } from "./sidebars/terraform-ansible-argoCD";
+import { gatewayLbNginxSidebar } from "./sidebars/gateway-lb-nginx";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -85,6 +86,7 @@ export default defineConfig({
       "/claude-lession/": claudeLessionSidebar,
       "/k3s-k8s/": k3sK8sSidebar,
       "/message-broker/": messageBrokerSidebar,
+      "/gateway-lb-nginx/": gatewayLbNginxSidebar,
       "/devops/": devopsSidebar,
       "/terraform-ansible-argoCD/": terraformAnsibleArgoCDSidebar,
       "/redis/": [

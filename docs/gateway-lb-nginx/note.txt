@@ -1,0 +1,6 @@
+https://claude.ai/chat/fae78206-caac-443d-a7d0-6a2ee8af1bdf
+https://chatgpt.com/c/69f0852a-4804-839d-8fcb-ac6e23cd9853
+
+
+Vì sao Load Balancer nên đứng trước API Gateway?
+Vì API Gateway cũng là một service cần được scale và high availability.
