@@ -223,7 +223,7 @@ Chứa Terraform code quản [infrastructure components]. Repo này là **source
 
 ## Cấu trúc
 
-```
+~~~
 modules/                    # Terraform modules (reusable)
   <module-name>/
     main.tf
@@ -235,7 +235,7 @@ live/                       # Environment-specific
     variables.tf
     backend.tf
 .github/workflows/          # CI/CD
-```
+~~~
 
 ## Thêm thay đổi
 
@@ -273,14 +273,14 @@ live/                       # Environment-specific
 
 ## Rollback
 
-```bash
+~~~bash
 # KHÔNG chạy terraform apply rollback trực tiếp
 # Luôn dùng git revert:
 git revert <bad-commit-sha>
 git push
 
 # Verify: ArgoCD hoặc terraform plan sẽ show diff
-```
+~~~
 
 ## Contacts
 
@@ -307,14 +307,14 @@ Chứa cluster-level configuration — ArgoCD bootstrap, platform addons, polici
 
 ## Cấu trúc
 
-```
+~~~
 argocd/                     # ArgoCD configuration
   bootstrap/               # Root App of Apps
   projects/                # AppProject definitions
   applications/             # Platform Application definitions
 platform-services/          # Helm values (upstream charts)
 policies/                   # OPA / Kyverno policies
-```
+~~~
 
 ## Thêm platform addon
 
@@ -369,7 +369,7 @@ Chứa Kubernetes manifests cho tất cả application microservices. **Source o
 
 ## Cấu trúc
 
-```
+~~~
 services/                   # Mỗi service 1 sub-tree
   <service-name>/
     base/                   # Base manifests
@@ -380,7 +380,7 @@ services/                   # Mỗi service 1 sub-tree
 argocd/                     # ArgoCD Application definitions
   projects/                # Per-team AppProject
   applications/            # Application per service/env
-```
+~~~
 
 ## Service catalog
 
@@ -392,7 +392,7 @@ argocd/                     # ArgoCD Application definitions
 
 ## Promotion flow
 
-```
+~~~
 CI build → acme/<service>:vX.Y.Z
     ↓
 Image Updater tạo PR → overlays/dev/
@@ -406,7 +406,7 @@ Promotion PR → overlays/staging/
 Promotion PR → overlays/prod/
     ↓
 2-eye (team lead + SRE) + merge → ArgoCD prod sync
-```
+~~~
 
 ## Thêm service mới
 
@@ -417,12 +417,12 @@ Promotion PR → overlays/prod/
 
 ## Rollback
 
-```bash
+~~~bash
 git log services/<service>/overlays/prod/
 git revert <bad-sha>
 git push
 # ArgoCD detect → sync về version trước
-```
+~~~
 
 ## CI checks
 

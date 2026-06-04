@@ -1035,7 +1035,7 @@ echo "Cleanup done"
 | 3 | Kong DNS resolver | Scale mà không reload Kong | curl |
 | 4 | Kong stale TTL fallback | order-3 kill → stale serving → recover | curl, time |
 | 5 | consul-template debounce | 5 changes → 1 reload | docker logs |
-| 6 | Consul tag-based filter | prod.<service> vs staging.<service> | dig |
+| 6 | Consul tag-based filter | prod.&lt;service&gt; vs staging.&lt;service&gt; | dig |
 | 7 | Kong upstream + DNS target | Kong active HC + DNS discovery | Admin API |
 
 ---

@@ -1394,7 +1394,7 @@ APPPROJECT
   • Multi-tenant boundary + RBAC + security policy
   • 5 security layers: sourceRepos, destinations,
     clusterResourceWhitelist, syncWindows, signatureKeys
-  • RBAC roles: p,<subject>,<action>,<resource>,<effect>
+  • RBAC roles: p,&lt;subject&gt;,&lt;action&gt;,&lt;resource&gt;,&lt;effect&gt;
 
 SYNC POLICY
   • 4 combinations: manual / automated / +selfHeal / +selfHeal+prune
@@ -1458,8 +1458,8 @@ Day 19: **Helm + Kustomize với ArgoCD**
 
 ### RBAC Reference
 - [ArgoCD RBAC](https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/)
-- Policy syntax: `p, <subject>, <action>, <resource>, <effect>`
-- Action: get, sync, update, delete, override, action/<name>
+- Policy syntax: `p, &lt;subject&gt;, &lt;action&gt;, &lt;resource&gt;, &lt;effect&gt;`
+- Action: get, sync, update, delete, override, action/&lt;name&gt;
 - Resource: applications, projects, clusters, repositories
 
 ### Tiếp theo

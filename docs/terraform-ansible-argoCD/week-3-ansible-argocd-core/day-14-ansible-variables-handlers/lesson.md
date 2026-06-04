@@ -459,6 +459,8 @@ tasks:
 
 Ansible sử dụng **Jinja2** làm templating engine. Nếu bạn biết Python/Django/Flask, Jinja2 rất quen thuộc.
 
+<div v-pre>
+
 **File template được đặt trong `templates/` directory:**
 
 ```
@@ -596,6 +598,8 @@ http {
 | `sort` | `{{ list \| sort }}` | sorted list |
 | `to_yaml` | `{{ dict \| to_yaml }}` | YAML string |
 | `to_json` | `{{ dict \| to_json }}` | JSON string |
+
+</div>
 
 ### 4.2 Tags Strategy
 

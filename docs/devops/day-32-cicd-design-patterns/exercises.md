@@ -367,7 +367,7 @@ PR Merged to main
 
 - Add to `.trivyignore` or equivalent:
 
-  ```
+  ~~~
 
   # CVE-XXXX: False positive because <reason>
 
@@ -375,7 +375,7 @@ PR Merged to main
 
   CVE-XXXX
 
-  ```
+  ~~~
 
 
 

@@ -1,5 +1,7 @@
 # Day 22 — ApplicationSet Basics
 
+<div v-pre>
+
 ## Mục tiêu ngày học
 
 - Hiểu ApplicationSet CRD và ApplicationSet controller khác gì so với Application thuong
@@ -728,3 +730,5 @@ Sau Day 22, ban có:
 - [Cluster Generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Cluster/)
 - [List Generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-List/)
 - [Controlling Resource Modification](https://github.com/argoproj/applicationset/blob/master/docs/Controlling-Resource-Modification.md)
+
+</div>

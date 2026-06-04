@@ -1217,7 +1217,7 @@ Repo này chứa Kubernetes manifests cho tất cả application microservices:
 
 ## Cấu trúc
 
-```
+~~~
 services/                  # Mỗi service 1 sub-folder
   <service-name>/
     base/                  # Base manifests
@@ -1238,7 +1238,7 @@ services/                  # Mỗi service 1 sub-folder
 argocd/
   projects/                # Per-team AppProject
   applications/            # ArgoCD Application cho mỗi service/env
-```
+~~~
 
 ## Promotion flow
 

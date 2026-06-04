@@ -1,5 +1,7 @@
 # Day 22 — Exercises: ApplicationSet Basics
 
+<div v-pre>
+
 ## Before You Start
 
 ```bash
@@ -231,3 +233,5 @@ argocd app list --selector app.kubernetes.io/created-by=applicationset --output 
 ```
 
 Commit tất cả manifests vào branch `day-22/exercises` và push.
+
+</div>

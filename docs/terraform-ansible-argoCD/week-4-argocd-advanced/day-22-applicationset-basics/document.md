@@ -1,5 +1,7 @@
 # Day 22 — ApplicationSet Cheat Sheet & Reference
 
+<div v-pre>
+
 ## 1. Generator Cheat Sheet
 
 ### List Generator
@@ -322,3 +324,5 @@ kubectl delete -f argocd/root-app.yaml   # App of Apps root app
 [ ] Quên CreateNamespace=true trong multi-namespace deployment
     → Application sync fail vi namespace chưa tồn tại
 ```
+
+</div>

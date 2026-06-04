@@ -178,71 +178,71 @@ Annotations:
 
 ## Investigation Steps
 
-### Step 1: Assess Scope
-```
-[Command or dashboard link to check scope]
-```
+### Step 1: Assess Scope
+~~~
+[Command or dashboard link to check scope]
+~~~
 - Is it one instance or all instances?
 - Is it one endpoint or all endpoints?
 - When did it start? (check timeline on dashboard)
 
-### Step 2: Check Recent Changes
-```
+### Step 2: Check Recent Changes
+~~~
 [Command to check recent deployments]
-kubectl rollout history deployment/<service> -n <namespace>
-```
+kubectl rollout history deployment/<service> -n <namespace>
+~~~
 - Was there a recent deployment?
 - Was there a config change?
 - Was there a dependency change?
 
-### Step 3: Check Dependencies
-```
+### Step 3: Check Dependencies
+~~~
 [Commands to check upstream/downstream services]
 curl -s http://<dependency>/health
-kubectl get pods -l app=<dependency>
-```
+kubectl get pods -l app=<dependency>
+~~~
 - Are all dependencies healthy?
 - Any increased latency to dependencies?
 
-### Step 4: Check Resources
-```
-kubectl top pods -l app=<service>
-```
+### Step 4: Check Resources
+~~~
+kubectl top pods -l app=<service>
+~~~
 - CPU throttled?
 - Memory pressure?
 - Disk full?
 
-### Step 5: Check Logs
-```
-kubectl logs -l app=<service> --tail=100 --since=5m | grep -i error
-```
+### Step 5: Check Logs
+~~~
+kubectl logs -l app=<service> --tail=100 --since=5m | grep -i error
+~~~
 - What error messages appear?
 - Any stack traces?
 - Pattern: all instances or specific?
 
 ## Mitigation Actions
 
-### If bad deployment:
-```
+### If bad deployment:
+~~~
 kubectl argo rollouts abort <service>
 # or
-kubectl rollout undo deployment/<service>
-```
+kubectl rollout undo deployment/<service>
+~~~
 
-### If resource issue:
-```
-kubectl scale deployment/<service> --replicas=&lt;n&gt;
-```
+### If resource issue:
+~~~
+kubectl scale deployment/<service> --replicas=&lt;n&gt;
+~~~
 
-### If dependency failure:
-```
-[Activate circuit breaker / fallback]
-```
+### If dependency failure:
+~~~
+[Activate circuit breaker / fallback]
+~~~
 
-### If data issue:
-```
-[Database recovery steps]
-```
+### If data issue:
+~~~
+[Database recovery steps]
+~~~
 
 ## Escalation Path
 | Time | Action |
