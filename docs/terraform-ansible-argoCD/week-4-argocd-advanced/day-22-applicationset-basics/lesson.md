@@ -113,12 +113,12 @@ generators:
 ```
 
 **Params sinh ra:**
-- `{{path}}`           — full path tu root repo: `services/api-service/overlays/dev`
-- `{{path.basename}}`  — ten cuoi cung: `dev`
-- `{{path[0]}}`        — phan tu thu 0: `services`
-- `{{path[1]}}`        — phan tu thu 1: `api-service`
-- `{{path[2]}}`        — phan tu thu 2: `overlays`
-- `{{path[3]}}`        — phan tu thu 3: `dev`
+- `{<!-- -->{path}}`           — full path tu root repo: `services/api-service/overlays/dev`
+- `{<!-- -->{path.basename}}`  — ten cuoi cung: `dev`
+- `{<!-- -->{path[0]}}`        — phan tu thu 0: `services`
+- `{<!-- -->{path[1]}}`        — phan tu thu 1: `api-service`
+- `{<!-- -->{path[2]}}`        — phan tu thu 2: `overlays`
+- `{<!-- -->{path[3]}}`        — phan tu thu 3: `dev`
 
 **Recommended cho microservices:** Them folder = tu dong co Application.
 
@@ -143,7 +143,7 @@ replicas: 2
 memory: 512Mi
 ```
 
-Params: `{{values.service}}`, `{{values.env}}`, `{{values.replicas}}`.
+Params: `{<!-- -->{values.service}}`, `{<!-- -->{values.env}}`, `{<!-- -->{values.replicas}}`.
 
 **Dùng khi:** can overwrite replicas/memory khac nhau giua env mà không hardcode trong template.
 
@@ -160,10 +160,10 @@ generators:
 ```
 
 **Params:**
-- `{{name}}`          — ten cluster (trong ArgoCD)
-- `{{nameNormalized}}` — ten da normalize (an toàn cho Kubernetes name)
-- `{{server}}`        — API server URL
-- `{{metadata.labels}}` — labels tren Secret
+- `{<!-- -->{name}}`          — ten cluster (trong ArgoCD)
+- `{<!-- -->{nameNormalized}}` — ten da normalize (an toàn cho Kubernetes name)
+- `{<!-- -->{server}}`        — API server URL
+- `{<!-- -->{metadata.labels}}` — labels tren Secret
 
 **Dùng khi:** multi-cluster fleet deployment. Day 23 se dung Matrix generator de ket hop Cluster + Git.
 
@@ -210,7 +210,7 @@ spec:
           - CreateNamespace=true
 ```
 
-**goTemplate: true** — Bat buoc dung trong production. Khong dung se bi legacy template collision voi `{{` trong YAML.
+**goTemplate: true** — Bat buoc dung trong production. Khong dung se bi legacy template collision voi `{<!-- -->{` trong YAML.
 
 ---
 

@@ -351,7 +351,7 @@ subscription.team-backend: |
 ### 4.5 Security considerations
 
 - **Backup chua secret**: `argocd admin export` bao gom `argocd-secret` (admin hash) + repo credentials → encrypt at rest, IAM restrict
-- **Webhook token**: Luu trong Secret, reference qua `{{.secretName}}`, khong hardcode trong Git ConfigMap
+- **Webhook token**: Luu trong Secret, reference qua `{<!-- -->{.secretName}}`, khong hardcode trong Git ConfigMap
 - **Metrics endpoint**: `:8083/metrics` co the expose internal IP → restrict via NetworkPolicy
 - **ArgoCD secret**: Backup duoc nhung password hash co the duoc reverse → IAM restrict access
 

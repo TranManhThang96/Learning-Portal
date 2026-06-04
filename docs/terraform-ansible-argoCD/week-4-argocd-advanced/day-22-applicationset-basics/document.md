@@ -18,7 +18,7 @@ generators:
           replicas: 1
 ```
 
-**Params:** `{{service}}`, `{{env}}`, `{{replicas}}` (tùy field trong element).
+**Params:** `{<!-- -->{service}}`, `{<!-- -->{env}}`, `{<!-- -->{replicas}}` (tùy field trong element).
 
 ---
 
@@ -39,13 +39,13 @@ generators:
 
 | Param | Ví dụ | Mô tả |
 |---|---|---|
-| `{{path}}` | `services/api-service/overlays/dev` | Full path từ repo root |
-| `{{path.basename}}` | `dev` | Tên cuối cùng |
-| `{{path[0]}}` | `services` | Phần tử thứ 0 |
-| `{{path[1]}}` | `api-service` | Phần tử thứ 1 |
-| `{{path[2]}}` | `overlays` | Phần tử thứ 2 |
-| `{{path[3]}}` | `dev` | Phần tử thứ 3 |
-| `{{path.filename}}` | (chỉ file mode) | Tên file không có ext |
+| `{<!-- -->{path}}` | `services/api-service/overlays/dev` | Full path từ repo root |
+| `{<!-- -->{path.basename}}` | `dev` | Tên cuối cùng |
+| `{<!-- -->{path[0]}}` | `services` | Phần tử thứ 0 |
+| `{<!-- -->{path[1]}}` | `api-service` | Phần tử thứ 1 |
+| `{<!-- -->{path[2]}}` | `overlays` | Phần tử thứ 2 |
+| `{<!-- -->{path[3]}}` | `dev` | Phần tử thứ 3 |
+| `{<!-- -->{path.filename}}` | (chỉ file mode) | Tên file không có ext |
 
 ---
 
@@ -70,7 +70,7 @@ memoryLimit: 512Mi
 cluster: https://10.0.0.1:6443
 ```
 
-**Params:** `{{path.basename}}`, `{{values.service}}`, `{{values.env}}`, `{{values.replicas}}`, ...
+**Params:** `{<!-- -->{path.basename}}`, `{<!-- -->{values.service}}`, `{<!-- -->{values.env}}`, `{<!-- -->{values.replicas}}`, ...
 
 ---
 
@@ -92,11 +92,11 @@ generators:
 
 | Param | Mô tả |
 |---|---|
-| `{{name}}` | Tên cluster (raw, chưa normalize) |
-| `{{nameNormalized}}` | Tên đã normalize (an toàn cho Kubernetes name) |
-| `{{server}}` | API server URL |
-| `{{metadata.labels.<key>}}` | Label trên Secret |
-| `{{metadata.annotations.<key>}}` | Annotation trên Secret |
+| `{<!-- -->{name}}` | Tên cluster (raw, chưa normalize) |
+| `{<!-- -->{nameNormalized}}` | Tên đã normalize (an toàn cho Kubernetes name) |
+| `{<!-- -->{server}}` | API server URL |
+| `{<!-- -->{metadata.labels.<key>}}` | Label trên Secret |
+| `{<!-- -->{metadata.annotations.<key>}}` | Annotation trên Secret |
 
 ---
 
@@ -218,7 +218,7 @@ Bạn có bao nhiêu service/env/cluster?
 | `no matches for kind Kustomization` | Path không chứa `kustomization.yaml` | Kiểm tra folder structure |
 | Application tự xóa sau khi tạo | Generator data thay đổi, prune: true | Thêm `preserveResourcesOnDeletion: true` |
 | Ứng dụng stuck ở OutOfSync | Path sai hoặc Git repo không đúng | Kiểm tra `kubectl get application <name> -o yaml` |
-| Go template render rỗng | Dùng `{{.path}}` thay vì `{{path}}` (khi goTemplate: false) | Dùng đúng syntax theo goTemplate setting |
+| Go template render rỗng | Dùng `{<!-- -->{.path}}` thay vì `{<!-- -->{path}}` (khi goTemplate: false) | Dùng đúng syntax theo goTemplate setting |
 | `ApplicationSet not found` trong ArgoCD UI | Namespace argocd khác | Kiểm tra namespace trong ApplicationSet |
 
 ---

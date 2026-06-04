@@ -387,7 +387,7 @@ spec:
 | `403 Forbidden` GHCR | GITHUB_TOKEN hết hạn | Dùng GITHUB_TOKEN mặc định |
 | Trivy exit 1 nhưng muốn push | CRITICAL CVE found | Fix CVE hoặc thêm vào .trivyignore |
 | PR không được tạo | GH_PAT thiếu quyền | Thêm `repo` + `workflow` scope |
-| Image tag SHA không match | Caching artifact | Dùng `${{ github.sha }}` không dùng artifact |
+| Image tag SHA không match | Caching artifact | Dùng `${<!-- -->{ github.sha }}` không dùng artifact |
 
 ### Observability Issues
 

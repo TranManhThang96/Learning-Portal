@@ -179,7 +179,7 @@ deploy_date = 2025-01-15
 environment = production
 ```
 
-Sau đó access qua: `{{ ansible_local.app.application.version }}`
+Sau đó access qua: `{<!-- -->{ ansible_local.app.application.version }}`
 
 **Tắt fact gathering khi không cần (tăng tốc):**
 
@@ -586,18 +586,18 @@ http {
 
 | Filter | Ví dụ | Kết quả |
 |--------|-------|---------|
-| `default` | `{{ port \| default(80) }}` | 80 nếu port undefined |
-| `upper/lower` | `{{ env \| upper }}` | "PRODUCTION" |
-| `int/float` | `{{ "42" \| int }}` | 42 |
-| `bool` | `{{ "true" \| bool }}` | True |
-| `join` | `{{ list \| join(',') }}` | "a,b,c" |
-| `length` | `{{ list \| length }}` | 3 |
-| `first/last` | `{{ list \| first }}` | first element |
-| `min/max` | `{{ nums \| max }}` | largest number |
-| `unique` | `{{ list \| unique }}` | deduplicated list |
-| `sort` | `{{ list \| sort }}` | sorted list |
-| `to_yaml` | `{{ dict \| to_yaml }}` | YAML string |
-| `to_json` | `{{ dict \| to_json }}` | JSON string |
+| `default` | `{<!-- -->{ port \| default(80) }}` | 80 nếu port undefined |
+| `upper/lower` | `{<!-- -->{ env \| upper }}` | "PRODUCTION" |
+| `int/float` | `{<!-- -->{ "42" \| int }}` | 42 |
+| `bool` | `{<!-- -->{ "true" \| bool }}` | True |
+| `join` | `{<!-- -->{ list \| join(',') }}` | "a,b,c" |
+| `length` | `{<!-- -->{ list \| length }}` | 3 |
+| `first/last` | `{<!-- -->{ list \| first }}` | first element |
+| `min/max` | `{<!-- -->{ nums \| max }}` | largest number |
+| `unique` | `{<!-- -->{ list \| unique }}` | deduplicated list |
+| `sort` | `{<!-- -->{ list \| sort }}` | sorted list |
+| `to_yaml` | `{<!-- -->{ dict \| to_yaml }}` | YAML string |
+| `to_json` | `{<!-- -->{ dict \| to_json }}` | JSON string |
 
 </div>
 
@@ -759,8 +759,8 @@ hostvars             # Always host variables dict
 
 **Khi nào dùng facts:**
 - Branch theo OS: `when: ansible_os_family == "Debian"`
-- Set resources dựa vào hardware: `worker_processes: {{ ansible_processor_count }}`
-- Dynamic config based on IP: `bind_address: {{ ansible_default_ipv4.address }}`
+- Set resources dựa vào hardware: `worker_processes: {<!-- -->{ ansible_processor_count }}`
+- Dynamic config based on IP: `bind_address: {<!-- -->{ ansible_default_ipv4.address }}`
 
 **Khi nào dùng variables:**
 - Application config values

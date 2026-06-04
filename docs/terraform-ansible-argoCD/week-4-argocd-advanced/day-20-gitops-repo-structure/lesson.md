@@ -1861,7 +1861,7 @@ argocd app list
 | ArgoCD không thấy file mới | `directory.recurse: true` missing | Thêm vào root-app spec |
 | ArgoCD ứng dụng không hiển thị | Application kind = directory thay vì Application | Kiểm tra kind trong YAML |
 | CODEOWNERS không enforce | Branch protection chưa require CODEOWNERS review | Bật trong GitHub → Settings → Branches |
-| Image bump PR tạo vào main | Workflow checkout sai ref | `with: ref: ${{ github.ref }}` |
+| Image bump PR tạo vào main | Workflow checkout sai ref | `with: ref: ${<!-- -->{ github.ref }}` |
 | ArgoCD vẫn OutOfSync sau merge | GitHub webhook chưa gửi | Verify webhook trong ArgoCD UI |
 | Promotion PR conflict | Concurrent promotion | Rebase trước merge |
 

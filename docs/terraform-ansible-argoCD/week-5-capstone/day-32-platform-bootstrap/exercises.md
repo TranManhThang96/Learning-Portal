@@ -21,11 +21,11 @@
    - `generatorB`: List generator cho các component: `cert-manager`, `external-secrets`, `ingress-nginx`, `prometheus`
 
 3. Template Application phải include:
-   - `name`: `{{ path.basename }}` (tên folder)
+   - `name`: `{<!-- -->{ path.basename }}` (tên folder)
    - `namespace`: argocd
    - `destination.server`: https://kubernetes.default.svc
    - `source.repoURL`: Git repo URL
-   - `source.path`: `argocd/platform-apps/charts/{{values.component}}/`
+   - `source.path`: `argocd/platform-apps/charts/{<!-- -->{values.component}}/`
    - Helm values inline
 
 4. Thêm label vào ApplicationSet:

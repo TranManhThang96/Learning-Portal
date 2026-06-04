@@ -14,7 +14,7 @@
 | Khái niệm | NodeJS/TypeScript | Prompt Engineering |
 |-----------|-------------------|-------------------|
 | Input validation | Zod, joi schema | System prompt constraints, output format spec |
-| Template literals | `` `Hello ${name}` `` | Jinja2 `{{ name }}` — mạnh hơn, có loops/conditionals |
+| Template literals | `` `Hello ${name}` `` | Jinja2 `{<!-- -->{ name }}` — mạnh hơn, có loops/conditionals |
 | Middleware | Express middleware chain | System prompt layering |
 | Unit testing | Jest, Vitest | Prompt evaluation harness với test cases |
 | Input sanitization | `sanitize-html`, DOMPurify | Prompt injection defense |

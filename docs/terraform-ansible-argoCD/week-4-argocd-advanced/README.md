@@ -44,7 +44,7 @@ Week 4 đào sâu các pattern ArgoCD production-grade. Từ thiết kế GitOps
 
 **Mục tiêu:** Hiểu ApplicationSet CRD + controller, nắm 4 generator cơ bản (List, Git Directory, Git File, Cluster), viết template với Go template syntax, deploy 3 services × 2 envs bằng 1 ApplicationSet, thêm service mới chỉ bằng tạo folder.
 
-- **Kiến thức:** ApplicationSet CRD + controller riêng biệt, render template từ generator → CREATE/UPDATE/DELETE Application, Go template syntax (`{{path.basename}}`, `{{values.key}}`), `preserveResourcesOnDeletion`.
+- **Kiến thức:** ApplicationSet CRD + controller riêng biệt, render template từ generator → CREATE/UPDATE/DELETE Application, Go template syntax (`{<!-- -->{path.basename}}`, `{<!-- -->{values.key}}`), `preserveResourcesOnDeletion`.
 - **Deep dive:** Bảng so sánh App of Apps vs ApplicationSet, decision tree generator, operational complexity (mass create/delete, dry-run, `goTemplate: true` vs legacy), pitfalls (tên trùng, generator data thay đổi → app bị xóa, race condition 2 ApplicationSet).
 - **Lab (10 bước):** Skeleton apps-repo `services/{api,worker,frontend}/{base,overlays/{dev,staging}}`, List generator warm-up, refactor sang Git Directory, auto-discovery thêm service, thêm env mới, xóa overlay → prune, Git File generator, failure scenario tên trùng.
 - **Document:** Cheat sheet 4 generator với YAML đầy đủ, template syntax reference, naming convention recipe, decision tree, common errors table, migration recipe, 10+ anti-patterns.

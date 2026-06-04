@@ -297,7 +297,7 @@ spec:
 - [ ] Nested matrix (matrix trong matrix) khong ho tro chinh thuc
 - [ ] Git generator path trung nhau giua cac generator con => duplicate Application
 - [ ] Khong dung `matchLabels` cho cluster secret type => cluster khong duoc nhan dien
-- [ ] dung `$` trong Application name thay vi `{{}}` => template khong duoc resolve
+- [ ] dung `$` trong Application name thay vi `{<!-- -->{}}` => template khong duoc resolve
 - [ ] Hub ArgoCD mat network den spoke cluster => Application o trang thai Unknown
 - [ ] Cluster secret config sai => Application o trang thai Unknown, khong debug duoc
 - [ ] Qua nhieu Application (> 1000) ma khong tang controller replicas => CPU spike

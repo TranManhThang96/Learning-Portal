@@ -467,7 +467,7 @@ flowchart LR
 |---|---|---|
 | Admin API port 8001 public | Bind `127.0.0.1:8001` only | `kong.conf: admin_listen = 127.0.0.1:8001` |
 | Credential brute-force | Basic Auth + IP allowlist | Nginx `auth_basic` + `allow/deny` |
-| Token leak in CI/CD logs | GitHub Secrets / Vault CI | `--token ${{ secrets.KONG_ADMIN_TOKEN }}` |
+| Token leak in CI/CD logs | GitHub Secrets / Vault CI | `--token ${<!-- -->{ secrets.KONG_ADMIN_TOKEN }}` |
 | Token rotation | decK token với TTL | Kong Admin token: `validity=86400` |
 | Malicious config push | decK `validate` pre-sync | `deck file validate --kong-addr http://localhost:8001` |
 | Config drift | `deck gateway sync --select-tag prod` | Sync only tagged resources |

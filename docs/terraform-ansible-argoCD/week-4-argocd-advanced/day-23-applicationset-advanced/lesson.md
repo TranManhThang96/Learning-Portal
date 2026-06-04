@@ -97,8 +97,8 @@ spec:
         namespace: '{{path.basename}}'
 ```
 
-Template field tu generator #1: `{{path.basename}}` (ten thu muc)
-Template field tu generator #2: `{{name}}`, `{{server}}` (ten cluster, server URL)
+Template field tu generator #1: `{<!-- -->{path.basename}}` (ten thu muc)
+Template field tu generator #2: `{<!-- -->{name}}`, `{<!-- -->{server}}` (ten cluster, server URL)
 
 ### Gioi Han Quan Trong
 
@@ -196,7 +196,7 @@ generators:
           env: prod
 ```
 
-Trong template: `{{values.replicas}}`, `{{values.autoscaling}}`
+Trong template: `{<!-- -->{values.replicas}}`, `{<!-- -->{values.autoscaling}}`
 
 ### Multi-Cluster GitOps: Hub & Spoke
 

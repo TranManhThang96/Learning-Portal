@@ -42,7 +42,7 @@ Tạo 5 services: `api`, `worker`, `frontend`, `cache`, `scheduler`.
 
 3. Tạo ApplicationSet dùng Git File generator:
    - Pattern: `services/*/config.yaml`
-   - `{{values.service}}-{{values.env}}` làm tên Application
+   - `{<!-- -->{values.service}}-{<!-- -->{values.env}}` làm tên Application
    - SyncPolicy: automated với `prune: false` (an toàn)
    - `CreateNamespace: true`
 
@@ -78,7 +78,7 @@ Tạo 5 services: `api`, `worker`, `frontend`, `cache`, `scheduler`.
 4. Kiểm tra: tất cả 16 Application name phải hợp lệ (Kubernetes rules)
 5. Test: tạo thêm service `external-partner-integration-service` → verify name không conflict
 
-**Hint:** Dùng `{{path[1] | lower | replace " " "-"}}` để sanitize.
+**Hint:** Dùng `{<!-- -->{path[1] | lower | replace " " "-"}}` để sanitize.
 
 ---
 
