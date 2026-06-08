@@ -130,7 +130,7 @@ Với tiếng Việt, cần kiểm tra model yêu cầu preprocessing gì. Một
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 model_id = "distilbert-base-uncased-finetuned-sst-2-english"
-revision = "main"
+revision = "main"  # Chỉ để demo; production dùng commit SHA bất biến.
 
 tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision, use_fast=True)
 model = AutoModelForSequenceClassification.from_pretrained(model_id, revision=revision)
@@ -147,8 +147,10 @@ model = AutoModelForSequenceClassification.from_pretrained(model_id, revision=re
 ```python
 from transformers import AutoModel, AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-model = AutoModel.from_pretrained("bert-base-uncased")
+model_id = "bert-base-uncased"
+revision = "main"  # Demo only; production thay bằng commit SHA.
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+model = AutoModel.from_pretrained(model_id, revision=revision)
 ```
 
 ### Task-specific model
@@ -158,7 +160,12 @@ Với classification, nên dùng task-specific class:
 ```python
 from transformers import AutoModelForSequenceClassification
 
-model = AutoModelForSequenceClassification.from_pretrained(model_id)
+model_id = "distilbert-base-uncased-finetuned-sst-2-english"
+revision = "main"  # Demo only; production thay bằng commit SHA.
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_id,
+    revision=revision,
+)
 ```
 
 Lý do: class này biết output schema cho classification, có `logits`, có thể có `id2label`/`label2id` trong config và tích hợp tốt với `Trainer`.
@@ -236,7 +243,7 @@ class InferenceInputError(ValueError):
 @dataclass(frozen=True)
 class ClassifierConfig:
     model_id: str = "distilbert-base-uncased-finetuned-sst-2-english"
-    revision: str = "main"
+    revision: str = "main"  # Demo default; production phải truyền commit SHA.
     max_length: int = 128
     batch_size: int = 16
     use_fast_tokenizer: bool = True
@@ -400,7 +407,9 @@ Tokenize theo batch và convert label string sang `labels` dạng số cho `Trai
 ```python
 from transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("distilbert-base-multilingual-cased")
+model_id = "distilbert-base-multilingual-cased"
+revision = "main"  # Demo only; production thay bằng commit SHA.
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 labels = ["negative", "neutral", "positive"]
 label2id = {label: idx for idx, label in enumerate(labels)}
 
@@ -431,8 +440,10 @@ Vì sao `batched=True` quan trọng:
 Cache note:
 
 - Datasets cache file đã download và data đã convert để tránh làm lại.
-- Nếu đổi preprocessing nhưng thấy output không đổi, kiểm tra cache hoặc dùng tham số phù hợp để force recompute.
+- `map` tạo fingerprint từ dataset và transform. Nếu cần xác minh transform mới, dùng `load_from_cache_file=False` có chủ đích thay vì xóa cache tùy tiện.
 - Không commit cache lớn vào repo bài học.
+
+Với dataset lớn hơn RAM, có thể dùng `streaming=True` để nhận `IterableDataset`. Trade-off là không có random access như dataset map-style; shuffle dùng buffer và training loop phải kiểm soát epoch/step rõ. Khi cần tensor PyTorch, dùng `with_format("torch")` hoặc data collator phù hợp thay vì convert thủ công từng row.
 
 ## 9. `Trainer API`: Fine-tune Nhanh Cho Task Chuẩn
 
@@ -451,13 +462,15 @@ from transformers import (
 )
 
 model_id = "distilbert-base-multilingual-cased"
+revision = "main"  # Demo only; production thay bằng commit SHA.
 labels = ["negative", "neutral", "positive"]
 label2id = {label: idx for idx, label in enumerate(labels)}
 id2label = {idx: label for label, idx in label2id.items()}
 
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 model = AutoModelForSequenceClassification.from_pretrained(
     model_id,
+    revision=revision,
     num_labels=len(labels),
     label2id=label2id,
     id2label=id2label,
@@ -500,6 +513,8 @@ trainer.save_model("artifacts/day15-final-model")
 tokenizer.save_pretrained("artifacts/day15-final-model")
 ```
 
+API note: Transformers hiện hành dùng `eval_strategy` trong `TrainingArguments` và `processing_class` trong `Trainer`. Version cũ có thể dùng tên khác như `evaluation_strategy` hoặc `tokenizer`. Pin package version của project và đọc migration notes trước khi copy code giữa các version.
+
 Dùng `Trainer` khi:
 
 - Task là standard classification, token classification, question answering, language modeling.
@@ -533,12 +548,12 @@ model, optimizer, train_dataloader, scheduler = accelerator.prepare(
 )
 
 for batch in train_dataloader:
+    optimizer.zero_grad(set_to_none=True)
     outputs = model(**batch)
     loss = outputs.loss
     accelerator.backward(loss)
     optimizer.step()
     scheduler.step()
-    optimizer.zero_grad()
 ```
 
 Điểm cần nhớ:
@@ -660,3 +675,12 @@ Trong 60-90 phút:
 8. Batch size lớn giúp gì và gây rủi ro gì?
 9. Quantization nên được quyết định bằng metric nào?
 10. Điều kiện tối thiểu để dùng Hugging Face model trong production là gì?
+
+## Nguồn kỹ thuật đã đối chiếu
+
+- Transformers docs qua Context7: `/websites/huggingface_co_transformers_main`.
+- Datasets docs qua Context7: `/llmstxt/huggingface_co_datasets_main_en_llms_txt`.
+- [Transformers tokenizer API](https://huggingface.co/docs/transformers/main/en/main_classes/tokenizer).
+- [Transformers Trainer API](https://huggingface.co/docs/transformers/main/en/main_classes/trainer).
+- [Datasets processing](https://huggingface.co/docs/datasets/main/en/process) và [streaming](https://huggingface.co/docs/datasets/main/en/stream).
+- API/behavior đã đối chiếu: padding/truncation, `return_tensors`, `load_dataset`, `map(batched=True)`, `remove_columns`, cache/fingerprint, streaming và PyTorch formatting.

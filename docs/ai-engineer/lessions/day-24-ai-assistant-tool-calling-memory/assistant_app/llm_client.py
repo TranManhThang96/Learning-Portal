@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from typing import Protocol
+
+
+class LLMClient(Protocol):
+    def complete(self, prompt: str) -> str: ...
 
 
 class FakeLLMClient:
@@ -17,6 +22,7 @@ class FakeLLMClient:
         payload = json.loads(prompt)
         message = payload["current_user_message"].lower()
         tool_result = payload.get("tool_result")
+        confirmed_actions = set(payload.get("trusted_context", {}).get("confirmed_actions", []))
 
         if tool_result is not None:
             return json.dumps(
@@ -49,12 +55,13 @@ class FakeLLMClient:
             )
 
         if "tạo ticket" in message or "tao ticket" in message:
-            confirmed = "xác nhận" in message or "xac nhan" in message or "confirm" in message
-            if not confirmed:
+            if "create_ticket" not in confirmed_actions:
                 return json.dumps(
                     {
                         "action": "ask_clarification",
-                        "final_answer": "Bạn vui lòng xác nhận trước khi mình tạo support ticket.",
+                        "final_answer": (
+                            "Bạn vui lòng xác nhận trong giao diện trước khi mình tạo support ticket."
+                        ),
                         "memory_updates": {},
                     },
                     ensure_ascii=False,
@@ -68,7 +75,6 @@ class FakeLLMClient:
                             "title": "Yêu cầu hỗ trợ từ chat",
                             "summary": payload["current_user_message"],
                             "priority": "normal",
-                            "user_confirmed": True,
                         },
                     },
                     "memory_updates": {},
@@ -90,6 +96,16 @@ class FakeLLMClient:
 
 
 def _answer_from_tool_result(tool_result: dict) -> str:
+    if tool_result.get("status") != "ok":
+        error = tool_result.get("error", "tool_failed")
+        if error == "confirmation_required":
+            return "Bạn cần xác nhận trong giao diện trước khi mình tạo ticket."
+        if error == "idempotency_key_required":
+            return "Không thể tạo ticket vì request thiếu idempotency key."
+        if error == "idempotency_conflict":
+            return "Request key đã được dùng cho một nội dung khác; ticket mới chưa được tạo."
+        return "Tool không xử lý được yêu cầu. Vui lòng thử lại hoặc chuyển cho nhân viên hỗ trợ."
+
     if tool_result.get("tool") == "search_kb":
         items = tool_result.get("items", [])
         if not items:

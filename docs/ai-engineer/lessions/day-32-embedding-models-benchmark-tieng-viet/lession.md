@@ -118,6 +118,26 @@ Nếu quên prefix, benchmark có thể thấp giả tạo. Đây là ví dụ v
 
 Nên test nếu corpus chủ yếu là tiếng Việt, có nhiều từ ghép, dấu, không dấu, chính sách nội bộ, thuật ngữ pháp lý/tài chính hoặc câu hỏi support đời thường. Tuy nhiên không nên mặc định rằng model Vietnamese-specific luôn tốt hơn multilingual model. Hãy đo trên qrels của chính mình.
 
+### API hiện hành của Sentence Transformers
+
+Với retrieval, API hiện hành khuyến nghị tách rõ hai vai trò:
+
+```python
+query_vectors = model.encode_query(
+    inputs=queries,
+    batch_size=32,
+    normalize_embeddings=True,
+)
+document_vectors = model.encode_document(
+    inputs=passages,
+    batch_size=32,
+    normalize_embeddings=True,
+)
+dimension = model.get_embedding_dimension()
+```
+
+`encode_query` và `encode_document` có thể tự áp prompt/task phù hợp nếu model đóng gói cấu hình đó. Tuy nhiên model card vẫn là nguồn quyết định. Ví dụ nhiều model E5 yêu cầu prefix `query: ` và `passage: `; nếu model không khai báo prompt sẵn, adapter của bạn phải thêm prefix một cách tường minh. Đừng đo query bằng một preprocessing path và index document bằng path khác mà không version config.
+
 ## 6. Vietnamese retrieval concerns
 
 Tiếng Việt có nhiều case làm dense retrieval sai hoặc thiếu ổn định:

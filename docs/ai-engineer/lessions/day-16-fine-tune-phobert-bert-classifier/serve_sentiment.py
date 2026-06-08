@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "artifacts/sentiment_classifier/best_model"))
@@ -89,7 +89,13 @@ async def lifespan(app: FastAPI):
     state["device"] = device
     state["tokenizer"] = tokenizer
     state["model"] = model
-    state["labels"] = load_labels(model)
+    labels = load_labels(model)
+    if len(labels) != model.config.num_labels:
+        raise RuntimeError(
+            f"Label count mismatch: artifact has {len(labels)} labels, "
+            f"model expects {model.config.num_labels}"
+        )
+    state["labels"] = labels
 
     # Warmup catches tokenizer/model load issues before the service receives traffic.
     predict_texts(["warmup"])
@@ -101,11 +107,33 @@ app = FastAPI(title="Vietnamese Sentiment Classifier", version=MODEL_VERSION, li
 
 
 class PredictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        normalized = normalize_text(value)
+        if not normalized:
+            raise ValueError("text must not be blank")
+        return normalized
 
 
 class BatchPredictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     texts: list[str] = Field(min_length=1, max_length=MAX_BATCH_SIZE)
+
+    @field_validator("texts")
+    @classmethod
+    def texts_must_not_be_blank(cls, values: list[str]) -> list[str]:
+        normalized = [normalize_text(value) for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("all texts must be non-blank")
+        if any(len(value) > 2000 for value in normalized):
+            raise ValueError("each text must contain at most 2000 characters")
+        return normalized
 
 
 @app.get("/health")
@@ -131,9 +159,4 @@ def predict(req: PredictRequest) -> dict[str, Any]:
 
 @app.post("/predict-batch")
 def predict_batch(req: BatchPredictRequest) -> dict[str, Any]:
-    texts = [normalize_text(text) for text in req.texts]
-    if any(not text for text in texts):
-        raise HTTPException(status_code=422, detail="All texts must be non-empty after normalization")
-    if len(texts) > MAX_BATCH_SIZE:
-        raise HTTPException(status_code=413, detail=f"Batch size must be <= {MAX_BATCH_SIZE}")
-    return {"items": predict_texts(texts), "model_version": MODEL_VERSION}
+    return {"items": predict_texts(req.texts), "model_version": MODEL_VERSION}

@@ -22,10 +22,14 @@ python -m venv .venv
 source .venv/bin/activate
 pip install langgraph langchain langchain-openai pydantic pytest
 export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-4.1-mini"
+export OPENAI_MODEL="gpt-5.5"
 ```
 
 Nếu bạn dùng provider khác OpenAI, giữ nguyên graph design và thay model adapter tương ứng.
+
+Model trên là default đã đối chiếu ngày 2026-06-08. Nếu account/provider của bạn
+không có model đó, chọn model hỗ trợ tool calling, ghi version vào note và chạy
+lại toàn bộ acceptance scenarios; không coi model swap là behavior-compatible.
 
 ## 2. Bài 1: ReAct Agent Read-Only
 

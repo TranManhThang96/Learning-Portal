@@ -201,6 +201,8 @@ vllm serve Qwen/Qwen2.5-7B-Instruct \
   --port 8000
 ```
 
+Chat endpoint cần chat template phù hợp. Nếu tokenizer của model không có chat template, server có thể không xử lý `messages` đúng cách; khi đó phải chọn model instruct/chat có template hoặc truyền template đã kiểm chứng bằng option của runtime. Đừng tự lấy base model rồi mặc định `/v1/chat/completions` sẽ hoạt động đúng.
+
 Dùng vLLM khi:
 
 - Có GPU server và traffic đồng thời.
@@ -316,6 +318,8 @@ Gateway chịu trách nhiệm:
 - Fallback sang model khác hoặc cloud provider.
 - Chuẩn hóa response schema.
 - Ghi metric latency, token, error, memory signal.
+
+OpenAI-compatible chỉ là compatibility ở API shape. Trước khi đổi runtime, smoke test ít nhất: model alias, system/user messages, streaming, usage fields, JSON/structured output nếu dùng, tool calling nếu dùng và error semantics. Business code chỉ thật sự portable khi những capability app cần đã được test.
 
 ## 9. Performance, Throughput, Latency Và VRAM Concern
 

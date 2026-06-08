@@ -299,6 +299,9 @@ LOGGER.setLevel(logging.INFO)
 SALT = os.environ.get("OBSERVABILITY_HASH_SALT", "dev-only-change-me")
 RAW_CONTENT_LOGGING = os.environ.get("RAW_CONTENT_LOGGING", "false").lower() == "true"
 
+if os.environ.get("APP_ENV") == "production" and SALT == "dev-only-change-me":
+    raise RuntimeError("OBSERVABILITY_HASH_SALT must be set in production")
+
 tracer = trace.get_tracer("rag-api", "1.0.0")
 
 REQUESTS = Counter(
@@ -311,6 +314,12 @@ STAGE_LATENCY = Histogram(
     "Latency by RAG stage",
     ["stage"],
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
+)
+REQUEST_LATENCY = Histogram(
+    "rag_request_latency_seconds",
+    "End-to-end RAG request latency",
+    ["route"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
 )
 TTFT = Histogram(
     "llm_ttft_seconds",
@@ -344,6 +353,7 @@ CITATION_INVALID = Counter(
     ["reason"],
 )
 
+PRICING_TABLE_VERSION = "training-fixture-v1"
 MODEL_PRICE_USD_PER_1M = {
     "gpt-4.1-mini": {"input": Decimal("0.40"), "output": Decimal("1.60")},
     "gpt-4.1": {"input": Decimal("2.00"), "output": Decimal("8.00")},
@@ -405,6 +415,7 @@ class RagTrace:
     prompt_version: str
     model: str
     index_version: str
+    pricing_table_version: str
     status: Literal["success", "error"] = "success"
     error_type: str | None = None
     stage_latency_ms: dict[str, int] = field(default_factory=dict)
@@ -446,6 +457,7 @@ def measured_stage(trace_record: RagTrace, stage: str, **span_attrs: Any):
 - Raw content mặc định không log. Muốn bật phải dùng env flag và vẫn redact.
 - Prometheus label chỉ dùng field cardinality thấp như `stage`, `model`, `status`.
 - Cost dùng Decimal để tránh lỗi làm tròn khi aggregate.
+- Pricing table có version để trace cũ vẫn audit được khi provider đổi giá. Các số trong snippet là fixture học tập, không phải bảng giá hiện hành.
 - Exception được record vào span và vẫn có log event riêng ở API layer.
 
 ### 8.4 FastAPI Query Endpoint
@@ -473,6 +485,7 @@ class QueryResponse(BaseModel):
     citations: list[dict[str, str]]
     usage: dict[str, int]
     estimated_cost_usd: str
+    pricing_table_version: str
 
 
 @app.get("/metrics")
@@ -499,6 +512,7 @@ async def query(
         prompt_version=prompt_version,
         model=model,
         index_version=index_version,
+        pricing_table_version=PRICING_TABLE_VERSION,
     )
 
     IN_FLIGHT.labels(route=route).inc()
@@ -512,6 +526,7 @@ async def query(
                 "rag.prompt_version": prompt_version,
                 "rag.model": model,
                 "rag.index_version": index_version,
+                "rag.pricing_table_version": PRICING_TABLE_VERSION,
             }
         )
         log_event(
@@ -593,6 +608,7 @@ async def query(
                 ttft_ms=generation["ttft_ms"],
                 latency_ms=trace_record.stage_latency_ms["generation"],
                 estimated_cost_usd=str(cost),
+                pricing_table_version=PRICING_TABLE_VERSION,
                 finish_reason=generation["finish_reason"],
             )
             log_event(
@@ -612,6 +628,7 @@ async def query(
                 stage_latency_ms=trace_record.stage_latency_ms,
                 token_usage=trace_record.token_usage,
                 estimated_cost_usd=str(trace_record.estimated_cost_usd),
+                pricing_table_version=trace_record.pricing_table_version,
             )
 
             return QueryResponse(
@@ -620,6 +637,7 @@ async def query(
                 citations=generation["citations"],
                 usage=trace_record.token_usage,
                 estimated_cost_usd=str(trace_record.estimated_cost_usd),
+                pricing_table_version=trace_record.pricing_table_version,
             )
 
         except TimeoutError as exc:
@@ -643,6 +661,7 @@ async def query(
             )
             raise HTTPException(status_code=500, detail={"trace_id": trace_id, "error": "internal_error"}) from exc
         finally:
+            REQUEST_LATENCY.labels(route=route).observe(time.perf_counter() - start)
             IN_FLIGHT.labels(route=route).dec()
 ```
 

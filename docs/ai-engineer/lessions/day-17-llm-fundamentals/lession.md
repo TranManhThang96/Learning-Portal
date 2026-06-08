@@ -123,7 +123,7 @@ Nhầm lẫn phổ biến:
 
 ## 5. Context Window Và Token Budget
 
-`Context window` là số token tối đa model có thể nhìn thấy trong một request, gồm cả input và output. Nếu model có context window lớn, bạn vẫn không nên nhồi mọi thứ vào prompt.
+`Context window` là ngân sách token model có thể xử lý cho một request/conversation state. Với nhiều API, input và output cùng chia sẻ một giới hạn tổng; một số model/provider còn công bố thêm output cap riêng. Vì vậy luôn đọc contract của đúng model: `input_tokens + reserved_output_tokens` phải nằm trong context limit, đồng thời `reserved_output_tokens` không được vượt output cap riêng.
 
 Token budget nên tính như sau:
 
@@ -174,14 +174,17 @@ Long context có trade-off:
 
 Decoding là bước chọn token tiếp theo từ probability distribution.
 
+`Greedy decoding` luôn chọn token có xác suất cao nhất ở mỗi bước. Nó nhanh, dễ hiểu và thường ổn định hơn sampling, nhưng lựa chọn tốt nhất ở từng bước chưa chắc tạo ra toàn bộ chuỗi tốt nhất. Greedy cũng có thể làm output lặp hoặc cứng. Trong nhiều API hosted, `temperature=0` tạo behavior gần greedy, nhưng implementation cụ thể và hạ tầng song song vẫn có thể làm output không hoàn toàn deterministic.
+
 | Param | Ý nghĩa | Dùng khi | Rủi ro nếu sai |
 |---|---|---|---|
-| `temperature=0` hoặc thấp | Output ổn định hơn, ưu tiên token xác suất cao | Classification, extraction, JSON, compliance | Có thể khô, ít đa dạng |
+| Greedy decoding | Chọn token xác suất cao nhất | Baseline ổn định, task output ngắn | Có thể lặp/cứng, không tìm chuỗi tối ưu toàn cục |
+| `temperature=0` hoặc thấp | Output ổn định hơn, ưu tiên token xác suất cao | Classification, extraction, JSON, compliance | Không bảo đảm deterministic tuyệt đối |
 | `temperature=0.2-0.5` | Cân bằng ổn định và linh hoạt | Support answer, summarization, rewrite nghiêm túc | Vẫn có nondeterminism |
 | `temperature>=0.7` | Sáng tạo hơn | Brainstorm, copywriting, ideation | Dễ drift format, factual risk cao hơn |
 | `top_p` | Sample trong cumulative probability mass | Giảm token quá hiếm | Tune cùng temperature bừa bãi làm khó debug |
 | `top_k` | Chỉ chọn trong k token top | Hay gặp ở local runtime | k quá thấp làm output nghèo |
-| `max_tokens` | Giới hạn output | Kiểm soát cost/latency | Quá thấp gây output bị cụt |
+| Output token cap | Giới hạn output; tên API có thể là `max_tokens`, `max_output_tokens` hoặc `num_predict` | Kiểm soát cost/latency | Quá thấp gây output bị cụt |
 | `stop sequences` | Dừng khi gặp marker | Protocol/template cụ thể | Marker sai làm cắt nhầm |
 | `seed` nếu provider hỗ trợ | Tăng reproducibility | Test và regression | Không phải provider nào cũng đảm bảo tuyệt đối |
 
@@ -192,6 +195,7 @@ Rule v1:
 - Creative writing: temperature cao hơn, human review nếu public-facing.
 - Không tune `temperature`, `top_p`, `top_k` cùng lúc khi chưa có eval.
 - Mọi thay đổi decoding params phải đi qua golden set.
+- Khi provider hỗ trợ cả `temperature` và `top_p`, thường chỉ thay đổi một tham số tại một thời điểm để biết thay đổi nào tạo ra tác động.
 
 ## 7. Hosted Model Vs Local/Open-weight Model
 

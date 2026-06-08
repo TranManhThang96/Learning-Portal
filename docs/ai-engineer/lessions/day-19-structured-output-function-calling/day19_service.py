@@ -6,7 +6,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -69,6 +69,9 @@ class ToolExecutionResponse(BaseModel):
     idempotency_key: str
     idempotent_replay: bool
     result: dict[str, Any]
+
+
+RequestId = Annotated[str, Header(alias="X-Request-Id", min_length=8, max_length=128)]
 
 
 ALLOWED_TOOLS: dict[str, type[BaseModel]] = {
@@ -160,6 +163,20 @@ def audit(event: dict[str, Any]) -> None:
     )
 
 
+def safe_validation_error(exc: ValidationError | ValueError) -> str:
+    if isinstance(exc, ValidationError):
+        errors = [
+            {
+                "type": error["type"],
+                "loc": ".".join(str(part) for part in error["loc"]),
+                "msg": error["msg"],
+            }
+            for error in exc.errors(include_input=False, include_url=False)
+        ]
+        return json.dumps(errors, ensure_ascii=False)[:800]
+    return f"{type(exc).__name__}: {exc}"[:800]
+
+
 def validate_ticket_semantics(item: TicketExtraction) -> None:
     if item.category == "billing" and not item.order_id:
         raise ValueError("billing ticket cần order_id để tự động xử lý")
@@ -203,7 +220,7 @@ async def structured_retry(req: TicketRequest, request_id: str, max_attempts: in
             )
             return item
         except (ValidationError, ValueError) as exc:
-            last_error = str(exc)[:800]
+            last_error = safe_validation_error(exc)
             audit(
                 {
                     "event": "structured_output_invalid",
@@ -244,7 +261,7 @@ async def decide_tool(req: TicketRequest, request_id: str) -> ToolDecision:
                 "request_id": request_id,
                 "tenant_id": req.tenant_id,
                 "user_id_hash": hash_value(req.user_id),
-                "error": str(exc)[:800],
+                "error": safe_validation_error(exc),
             }
         )
         raise HTTPException(status_code=422, detail="invalid tool decision") from exc
@@ -269,7 +286,10 @@ def validate_tool_arguments(decision: ToolDecision) -> BaseModel:
     try:
         return args_model.model_validate(decision.arguments)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail={"error": "tool_args_invalid", "details": exc.errors()}) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "tool_args_invalid", "details": safe_validation_error(exc)},
+        ) from exc
 
 
 def validate_tool_policy(req: TicketRequest, decision: ToolDecision, args: BaseModel) -> None:
@@ -358,17 +378,17 @@ def execute_allowed_tool(req: TicketRequest, request_id: str, decision: ToolDeci
 
 
 @app.post("/extract", response_model=TicketExtraction)
-async def extract_ticket(req: TicketRequest, x_request_id: str = Header(default="demo-request")) -> TicketExtraction:
+async def extract_ticket(req: TicketRequest, x_request_id: RequestId) -> TicketExtraction:
     return await structured_retry(req, x_request_id)
 
 
 @app.post("/tool/decide", response_model=ToolDecision)
-async def tool_decision(req: TicketRequest, x_request_id: str = Header(default="demo-request")) -> ToolDecision:
+async def tool_decision(req: TicketRequest, x_request_id: RequestId) -> ToolDecision:
     return await decide_tool(req, x_request_id)
 
 
 @app.post("/tool/execute", response_model=ToolExecutionResponse)
-async def tool_execute(req: TicketRequest, x_request_id: str = Header(default="demo-request")) -> ToolExecutionResponse:
+async def tool_execute(req: TicketRequest, x_request_id: RequestId) -> ToolExecutionResponse:
     decision = await decide_tool(req, x_request_id)
     return execute_allowed_tool(req, x_request_id, decision)
 

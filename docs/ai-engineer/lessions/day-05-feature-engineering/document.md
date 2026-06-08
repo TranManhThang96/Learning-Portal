@@ -47,6 +47,8 @@ Trước khi tin metrics, hãy hỏi:
 - Duplicate customer/order/session có bị rơi cả train và test không?
 - Text có chứa label trực tiếp như "cancelled", "refund completed", "retention approved" sau outcome không?
 - Target encoding có được tính out-of-fold không?
+- Mọi feature experiment có dùng validation thay vì nhìn test lặp lại không?
+- Custom datetime/text transform có nằm trong artifact dùng chung giữa train và inference không?
 
 ## 5. Schema Contract Tối Thiểu
 
@@ -101,5 +103,8 @@ monthly_charges:
 
 ## 8. Context7 Docs Đã Dùng
 
-- scikit-learn stable docs qua Context7: `Pipeline`, `ColumnTransformer`, `SimpleImputer`, `OneHotEncoder(handle_unknown="ignore")`, `TfidfVectorizer`, `SelectPercentile`.
-- pandas docs qua Context7: `pd.to_datetime`, `DataFrame.isna/info/memory_usage`, missing data handling, `merge_asof` cho time-aware join.
+- `/websites/scikit-learn_stable`: `Pipeline`, `ColumnTransformer`, `SimpleImputer`, `OneHotEncoder(handle_unknown="ignore")`, `TfidfVectorizer`, `SelectPercentile`.
+- `/websites/pandas_pydata`: `pd.to_datetime`, nullable `Int64`, boolean indexing, missing data handling, as-of lookup/join patterns cho time-aware feature.
+- `/websites/numpy_doc_2_4`: `ndarray`, broadcasting, `@` matrix multiplication và `*` element-wise multiplication.
+- `merge_asof` cần sort theo time key; dùng `direction="backward"` và tolerance phù hợp để tránh future/stale match.
+- Scalar column selector trong `ColumnTransformer` tạo 1D input phù hợp cho `TfidfVectorizer`.

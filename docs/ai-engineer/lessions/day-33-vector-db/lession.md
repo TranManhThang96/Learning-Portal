@@ -216,6 +216,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Sequence
+from uuid import UUID, uuid5
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -234,6 +235,7 @@ from qdrant_client.models import (
 COLLECTION = "rag_chunks_bge_m3_v2"
 VECTOR_SIZE = 1024
 ACTIVE_INDEX_VERSION = "rag-index-2026-05-10-bge-m3-v2"
+POINT_ID_NAMESPACE = UUID("ad6f7964-1581-4f19-9d49-1c11f91044b1")
 
 
 @dataclass(frozen=True)
@@ -250,6 +252,12 @@ def get_client() -> QdrantClient:
     )
 
 
+def point_id_for_chunk(chunk_id: str) -> str:
+    # Qdrant point IDs are unsigned integers or UUIDs. Keep the readable
+    # business chunk_id in payload and derive a deterministic UUID for upsert.
+    return str(uuid5(POINT_ID_NAMESPACE, chunk_id))
+
+
 def ensure_collection(client: QdrantClient) -> None:
     existing = {c.name for c in client.get_collections().collections}
     if COLLECTION not in existing:
@@ -260,12 +268,18 @@ def ensure_collection(client: QdrantClient) -> None:
             on_disk_payload=True,
         )
 
-    for field in ("tenant_id", "acl_roles", "document_id", "index_version", "deleted"):
+    keyword_fields = ("tenant_id", "acl_roles", "document_id", "index_version")
+    for field in keyword_fields:
         client.create_payload_index(
             collection_name=COLLECTION,
             field_name=field,
             field_schema=PayloadSchemaType.KEYWORD,
         )
+    client.create_payload_index(
+        collection_name=COLLECTION,
+        field_name="deleted",
+        field_schema=PayloadSchemaType.BOOL,
+    )
 
 
 def upsert_chunks(client: QdrantClient, chunks: Sequence[dict]) -> None:
@@ -274,12 +288,13 @@ def upsert_chunks(client: QdrantClient, chunks: Sequence[dict]) -> None:
         payload = {
             **chunk["metadata"],
             "text": chunk["text"],
-            "deleted": "false",
+            "chunk_id": chunk["id"],
+            "deleted": False,
             "index_version": ACTIVE_INDEX_VERSION,
         }
         points.append(
             PointStruct(
-                id=chunk["id"],
+                id=point_id_for_chunk(chunk["id"]),
                 vector=chunk["embedding"],
                 payload=payload,
             )
@@ -297,7 +312,7 @@ def search_chunks(
     query_filter = Filter(
         must=[
             FieldCondition(key="tenant_id", match=MatchValue(value=auth.tenant_id)),
-            FieldCondition(key="deleted", match=MatchValue(value="false")),
+            FieldCondition(key="deleted", match=MatchValue(value=False)),
             FieldCondition(key="index_version", match=MatchValue(value=ACTIVE_INDEX_VERSION)),
             FieldCondition(key="acl_roles", match=MatchAny(any=list(auth.roles))),
         ]
@@ -324,6 +339,7 @@ def search_chunks(
 
 Production notes:
 
+- Qdrant point ID không phải business string tùy ý; dùng UUID/unsigned integer và giữ `chunk_id` dễ đọc trong payload.
 - `tenant_id` lấy từ auth/session, không lấy từ request body.
 - `limit` cho retrieval có thể lớn hơn context final vì còn rerank.
 - Không trả vector về API nếu không cần.
@@ -403,6 +419,8 @@ Lưu ý:
 - HNSW trong pgvector không cần training trước như IVFFlat.
 - Với IVFFlat, cần chọn `lists` khi tạo index và tune `ivfflat.probes` khi query.
 - Filter có thể làm ANN trả ít kết quả tốt hơn kỳ vọng; phải benchmark với filter thật.
+- Với pgvector 0.8+, cân nhắc `SET LOCAL hnsw.iterative_scan = strict_order` hoặc `relaxed_order` cho query có filter mạnh; vẫn phải đo recall và query plan.
+- `CREATE INDEX CONCURRENTLY` không chạy bên trong transaction migration thông thường; tách nó thành bước deploy riêng và theo dõi progress.
 - Postgres backup/restore quen thuộc là lợi thế lớn, nhưng vector index vẫn cần theo dõi bloat, vacuum, reindex và query plan.
 
 ## 12. Delete, reindex và blue/green index
@@ -517,4 +535,3 @@ Không nên production nếu chỉ có notebook demo, không có ACL test, khôn
 - [ ] Có kế hoạch delete, reindex, backup, restore.
 - [ ] Đo được Recall@K, MRR@K và p95 latency.
 - [ ] Trả lời được điều kiện production readiness.
-

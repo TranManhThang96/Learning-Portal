@@ -99,21 +99,33 @@ Metrics:
 Implementation tối giản:
 
 ```python
-def recall_at_k(retrieved_ids: list[str], expected_ids: set[str], k: int) -> float:
+def recall_at_k(
+    retrieved_ids: list[str], expected_ids: set[str], k: int
+) -> float | None:
     if not expected_ids:
-        return 1.0
+        return None
     hits = set(retrieved_ids[:k]).intersection(expected_ids)
     return len(hits) / len(expected_ids)
 
 
-def mrr_at_k(retrieved_ids: list[str], expected_ids: set[str], k: int) -> float:
+def mrr_at_k(
+    retrieved_ids: list[str], expected_ids: set[str], k: int
+) -> float | None:
+    if not expected_ids:
+        return None
     for rank, chunk_id in enumerate(retrieved_ids[:k], start=1):
         if chunk_id in expected_ids:
             return 1.0 / rank
     return 0.0
 ```
 
-Cần report theo tag, không chỉ aggregate. Ví dụ `Recall@5` tổng thể 0.85 nhưng tag `acl` fail thì vẫn block release.
+`None` nghĩa là metric không áp dụng, ví dụ case `no-answer` không có relevant
+chunk. Không được đổi `None` thành `1.0`, vì như vậy thêm nhiều negative cases sẽ làm
+aggregate retrieval score tăng giả tạo.
+
+Cần report cả numerator/denominator và theo tag, không chỉ aggregate. Ví dụ
+`Recall@5 = 0.85 (17/20 applicable cases)` nhưng tag `acl` fail thì vẫn block
+release.
 
 ## 4. Generation Regression Test
 
@@ -125,6 +137,7 @@ Nên test theo rubric:
 - Có grounded trong retrieved context không?
 - Có citation bắt buộc không?
 - Citation có nằm trong context không?
+- Citation có thật sự support claim không?
 - Output đúng schema không?
 - No-answer case có từ chối đúng không?
 - Không leak PII/secret/system prompt không?
@@ -138,6 +151,17 @@ Scoring options:
 | Embedding similarity | Linh hoạt | Có false positive |
 | LLM-as-judge | Scale tốt cho rubric | Tốn cost, judge drift |
 | Human review | Chính xác hơn | Chậm, không scale |
+
+Hai metric dễ bị nhầm:
+
+- `citation_validity`: `chunk_id` được cite có thuộc allowed context không. Check bằng
+  code, deterministic.
+- `citation_correctness`: nội dung chunk có thật sự hỗ trợ claim không. Cần label,
+  rubric/judge đã calibration hoặc human review.
+- `faithfulness`: mọi factual claim trong answer có được allowed context hỗ trợ
+  không. Answer có thể cite đúng một câu nhưng thêm claim khác không có nguồn.
+
+Validity đạt 100% vẫn có thể cite đúng ID nhưng nguồn không support câu trả lời.
 
 Best solution theo context:
 
@@ -205,6 +229,9 @@ Metadata bắt buộc trong mỗi eval run:
 - `guardrail_version`.
 - `git_sha`.
 
+Mỗi metric cũng phải lưu `applicable_case_count`. Metric không có case áp dụng phải
+hiển thị `N/A` và làm CI fail nếu threshold bắt buộc, không được coi là pass.
+
 Nếu không version các yếu tố này, bạn không biết regression đến từ đâu.
 
 ## 7. Threshold-Based Deployment
@@ -212,22 +239,31 @@ Nếu không version các yếu tố này, bạn không biết regression đến
 Threshold mẫu:
 
 ```yaml
-recall_at_5: 0.80
-mrr_at_10: 0.70
-citation_correctness: 0.95
-format_pass_rate: 0.98
-no_answer_accuracy: 0.90
-prompt_injection_block_rate: 1.00
-acl_leak_count: 0
-p95_latency_ms: 5000
-estimated_cost_per_request_usd: 0.02
+recall_at_5: {min: 0.80}
+mrr_at_10: {min: 0.70}
+citation_validity: {min: 1.00}
+citation_correctness: {min: 0.95}
+# Chỉ bật khi runner có scorer đã calibration:
+# faithfulness: {min: 0.90}
+format_pass_rate: {min: 0.98}
+no_answer_accuracy: {min: 0.90}
+prompt_injection_block_rate: {min: 1.00}
+acl_leak_count: {max: 0}
+missing_evidence_count: {max: 0}
+p95_latency_ms: {max: 5000}
+estimated_cost_per_request_usd: {max: 0.02}
 ```
+
+Không suy hướng so sánh từ tên metric. Rule `min` và `max` phải explicit để latency,
+cost và leak count không vô tình được kiểm tra như quality score.
 
 Block deploy khi:
 
 - `acl_leak_count > 0`.
+- `missing_evidence_count > 0` cho metric/security field bắt buộc.
 - Prompt injection critical case fail.
 - Citation correctness dưới ngưỡng domain yêu cầu.
+- Citation validity dưới `1.0` nghĩa là hệ thống cite nguồn ngoài allowed context.
 - Format pass rate thấp làm API client hỏng.
 - No-answer accuracy giảm mạnh.
 - Latency/cost vượt budget production.
@@ -318,5 +354,18 @@ Không nên claim production-ready nếu:
 - [ ] Tôi đo format/citation/no-answer riêng.
 - [ ] Tôi có threshold config cho CI.
 - [ ] Tôi có report theo tags.
+- [ ] Mỗi metric có denominator và không tự pass khi thiếu case áp dụng.
 - [ ] Tôi có trace cho từng eval case.
 - [ ] Tôi biết khi nào block deploy, khi nào canary.
+
+## Quiz Tự Kiểm Tra
+
+1. Vì sao `Recall@5=1.0` cho case không có expected chunk là sai?
+2. Citation validity và citation correctness khác nhau thế nào?
+3. Tại sao snapshot toàn bộ prose thường flaky?
+4. Một aggregate score đạt nhưng có một ACL leak thì release được không?
+5. Khi đổi embedding model, eval tối thiểu nào phải chạy lại?
+
+Đáp án: (1) metric không áp dụng và sẽ làm đẹp aggregate giả; (2) ID thuộc context
+khác với nội dung support claim; (3) wording nondeterministic; (4) không; (5) full
+retrieval eval, sau đó generation sample/release eval theo risk.

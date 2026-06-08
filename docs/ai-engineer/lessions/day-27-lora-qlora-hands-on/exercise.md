@@ -2,10 +2,10 @@
 
 ## Bài 1: Chuẩn Bị Dataset
 
-Tạo file `data/day27_support_sft.jsonl` với ít nhất 30 examples theo format:
+Ưu tiên dùng trực tiếp `processed/dataset_split.jsonl` từ Day 26. Nếu làm độc lập, tạo `data/day27_support_sft.jsonl` với ít nhất 30 examples và tự gán split theo group:
 
 ```json
-{"messages":[{"role":"user","content":"Khách muốn đổi địa chỉ giao hàng."},{"role":"assistant","content":"{\"category\":\"shipping\",\"priority\":\"medium\",\"answer\":\"Mình đã ghi nhận yêu cầu đổi địa chỉ giao hàng. Vui lòng cung cấp mã đơn hàng và địa chỉ mới để mình kiểm tra khả năng cập nhật.\"}"}]}
+{"id":"shipping_001","group_id":"shipping_address_001","split":"train","messages":[{"role":"user","content":"Khách muốn đổi địa chỉ giao hàng."},{"role":"assistant","content":"{\"category\":\"shipping\",\"priority\":\"medium\",\"answer\":\"Mình đã ghi nhận yêu cầu đổi địa chỉ giao hàng. Vui lòng cung cấp mã đơn hàng và địa chỉ mới để mình kiểm tra khả năng cập nhật.\"}"}]}
 ```
 
 Yêu cầu:
@@ -14,6 +14,8 @@ Yêu cầu:
 - Có ít nhất 3 priority: `low`, `medium`, `high`.
 - Không dùng email, số điện thoại, mã thẻ, token thật.
 - Assistant output phải là JSON string parse được.
+- Có đủ `train`, `validation`, `test`; cùng `group_id` chỉ nằm trong một split.
+- Test split được giữ lại cho Day 28, không đưa vào trainer.
 
 ## Bài 2: Chạy LoRA Hoặc QLoRA
 
@@ -21,15 +23,19 @@ Chạy training trên model nhỏ:
 
 ```bash
 MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct \
-DATA_PATH=data/day27_support_sft.jsonl \
+MODEL_REVISION=main \
+DATA_PATH=instruction_dataset/processed/dataset_split.jsonl \
 OUT_DIR=artifacts/day27_support_lora_v1 \
 USE_QLORA=1 \
 SEED=42 \
 LORA_R=16 \
 LORA_ALPHA=32 \
 LORA_DROPOUT=0.05 \
+TARGET_MODULES=q_proj,k_proj,v_proj,o_proj \
 python scripts/train_lora_sft.py
 ```
+
+`MODEL_REVISION=main` chỉ tiện cho lab. Khi lưu artifact hoặc so sánh run, thay bằng commit SHA/tag bất biến đã kiểm tra trong model repository.
 
 Ghi lại:
 
@@ -40,6 +46,7 @@ Ghi lại:
 - Train loss/eval loss cuối cùng.
 - Thời gian train.
 - Artifact size.
+- Dataset SHA-256, base model revision và package versions trong `training_metadata.json`.
 
 ## Bài 3: Thử Ba Config LoRA
 

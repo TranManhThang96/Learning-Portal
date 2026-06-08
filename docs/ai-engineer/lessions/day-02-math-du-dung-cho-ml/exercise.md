@@ -183,21 +183,16 @@ Gợi ý best solution theo context:
 - Có giải thích trade-off bằng lời, không chỉ nộp code.
 - Trả lời rõ: "Dùng được trong production không? Nếu có thì cần điều kiện gì?"
 
-## Đáp án định hướng cho câu hỏi production
+## Rubric tự chấm
 
-Dùng được trong production nếu:
+Mỗi tiêu chí 0-2 điểm:
 
-- Code có validation, numerical stability và test edge cases.
-- Dữ liệu nhỏ hoặc path này chỉ dùng cho prototype/debug/reranking local.
-- Với dữ liệu lớn, thay full scan bằng ANN/vector database.
-- Có evaluation set để tune top-k, threshold và metric.
-- Có logging/monitoring cho latency, score distribution, error rate và quality.
-- Có policy bảo mật cho embedding, metadata và permission.
+| Tiêu chí | 0 điểm | 1 điểm | 2 điểm |
+|---|---|---|---|
+| Correctness | Sai happy path | Đúng happy path | Đúng cả edge cases |
+| Validation | Không có | Có shape check | Có shape, finite, zero/range checks |
+| Numerical stability | Không xét | Nhận diện rủi ro | Có stable sigmoid/cosine guard |
+| Performance reasoning | Không đo | Có timing nhỏ | Có estimate scale và phương án ANN/batch |
+| Production decision | Kết luận chung chung | Nêu vài điều kiện | Có metric, security, version, fallback |
 
-Chưa đủ production nếu:
-
-- Chưa có golden set.
-- Chưa kiểm soát version của embedding model/index.
-- Chưa có permission filter.
-- Chưa đo latency/memory ở scale thật.
-- Probability được dùng cho quyết định cost cao nhưng chưa calibration.
+Điểm đạt: tối thiểu 8/10 và không có tiêu chí correctness bằng 0.

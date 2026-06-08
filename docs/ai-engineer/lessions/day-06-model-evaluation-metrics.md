@@ -10,4 +10,4 @@ Bài học Day 6 đã được tách thành folder riêng để dễ học, dễ
 
 ## Mục tiêu nhanh
 
-Sau bài này, bạn cần không còn bị đánh lừa bởi accuracy, biết chọn metric theo business objective, hiểu trade-off giữa precision/recall/F1/ROC-AUC/PR-AUC, dùng được MAE/MSE/RMSE/MAPE cho regression, hiểu MRR/NDCG/Recall@k cho ranking/RAG, và trả lời được câu hỏi: "Dùng được trong production không? Nếu có thì cần điều kiện gì?"
+Sau bài này, bạn cần không còn bị đánh lừa bởi accuracy, biết chọn metric theo business objective, hiểu trade-off giữa precision/recall/F1/ROC-AUC/Average Precision, dùng được MAE/MSE/RMSE/MAPE cho regression, hiểu MRR/NDCG/Recall@k cho ranking/RAG, và trả lời được câu hỏi: "Dùng được trong production không? Nếu có thì cần điều kiện gì?"

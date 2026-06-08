@@ -305,3 +305,12 @@ Prompt này dùng được production ở mức assisted automation, không dùn
 - Low confidence hoặc missing_info sẽ route human review.
 - Không có secret trong prompt/context/log.
 ```
+
+## 8. Nguồn Kỹ Thuật Đã Xác Minh
+
+- Context7 `/websites/developers_openai_api`: structured outputs trong Responses API dùng `text.format`, JSON Schema `strict`, và function/tool calling lifecycle.
+- OpenAI Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
+- OpenAI Prompt Engineering: <https://developers.openai.com/api/docs/guides/prompt-engineering>
+- OpenAI Function Calling: <https://developers.openai.com/api/docs/guides/function-calling>
+
+Các API provider thay đổi theo version. Prompt library nên lưu `provider`, `model`, SDK version và schema version; adapter chịu trách nhiệm map contract nội bộ sang API cụ thể.

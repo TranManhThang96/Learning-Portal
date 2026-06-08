@@ -1,4 +1,6 @@
-# Day 13 Document: Attention Mechanism
+# Day 13 Reference: Attention Shapes, Masks Và Production Checklist
+
+File này là tài liệu tra cứu sau khi đã học đầy đủ trong `lession.md`. Các phần dưới nhắc lại công thức, shape, implementation và checklist để review nhanh; không phải luồng bài giảng bắt buộc.
 
 ## 1. Attention Là Gì?
 
@@ -315,11 +317,11 @@ class MultiHeadSelfAttention(nn.Module):
                 raise ValueError("each query must be allowed to attend to at least one key")
             scores = scores.masked_fill(~allowed, torch.finfo(scores.dtype).min)
 
-        weights = torch.softmax(scores, dim=-1)
-        weights = self.dropout(weights)
-        context = torch.matmul(weights, v)
+        attention_probs = torch.softmax(scores, dim=-1)
+        dropped_attention_probs = self.dropout(attention_probs)
+        context = torch.matmul(dropped_attention_probs, v)
         context = context.transpose(1, 2).contiguous().view(batch, seq_len, embed_dim)
-        return self.out_proj(context), weights
+        return self.out_proj(context), attention_probs
 ```
 
 Điểm cần review trong code:
@@ -328,7 +330,8 @@ class MultiHeadSelfAttention(nn.Module):
 - Mask dùng `True = allowed`, sau đó `~allowed` mới bị fill bằng giá trị rất âm.
 - Tất cả mask tạo trên cùng `device` với input.
 - `torch.finfo(scores.dtype).min` tránh hard-code `-1e9` không phù hợp mọi dtype.
-- `nn.Dropout` được áp dụng trên attention weights và tự khác behavior giữa `train()`/`eval()`.
+- `nn.Dropout` được áp dụng trên bản dùng để tính context và tự khác behavior giữa `train()`/`eval()`.
+- Giá trị trả về là probabilities trước dropout để tổng theo key vẫn gần 1 và phù hợp visualization.
 - Nếu một query không được attend vào key nào, code raise lỗi thay vì tạo `NaN`.
 
 ## 10. Test Nhỏ Cần Có
@@ -438,4 +441,4 @@ Nếu mỗi bước tính lại K/V cho toàn bộ prefix thì rất chậm. KV 
 - Attention Is All You Need: https://arxiv.org/abs/1706.03762
 - The Illustrated Transformer: https://jalammar.github.io/illustrated-transformer/
 - The Annotated Transformer: https://nlp.seas.harvard.edu/annotated-transformer/
-- PyTorch docs qua Context7: `/pytorch/pytorch`, `/websites/pytorch_2_11`
+- PyTorch docs qua Context7: `/websites/pytorch_2_12`

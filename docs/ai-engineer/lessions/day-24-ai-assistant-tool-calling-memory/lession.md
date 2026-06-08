@@ -9,7 +9,8 @@ Build một **Support AI Assistant API backend** nhỏ nhưng có boundary gần
 - Bắt model trả về structured output theo schema.
 - Gọi ít nhất 2 tools qua tool executor, không cho model gọi hàm trực tiếp.
 - Có memory đơn giản theo user/session.
-- Có logging, trace id, timeout, retry schema và idempotency cho action có side effect.
+- Có logging, trace id, retry schema, idempotency cho side effect và biết đặt
+  timeout đúng ở provider/tool client thật.
 - Có tests cho schema, tool policy và prompt injection.
 
 ## Bối cảnh bài toán
@@ -31,7 +32,24 @@ Phạm vi cố ý nhỏ:
 - Không chạy raw SQL.
 - Không tự refund, gửi email, xóa dữ liệu hoặc gọi tool nguy hiểm.
 - Không lưu secret, token, password, payment data hoặc PII nhạy cảm vào memory.
-- Mỗi request phải có `user_id`, `session_id` và optional `idempotency_key`.
+- Mỗi request phải có `user_id`, `session_id`; action ghi dữ liệu cần `idempotency_key`
+  và confirmation do application cung cấp.
+
+## Thuật ngữ nền tảng
+
+| Thuật ngữ | Hiểu đơn giản | Boundary production |
+|---|---|---|
+| Orchestrator | Code điều phối model, tool và memory | Sở hữu workflow, budget và error handling |
+| Structured output | JSON theo schema thay vì text tự do | Vẫn phải validate ở application layer |
+| Tool | Hàm/API mà model có thể đề xuất gọi | Backend authorize rồi mới execute |
+| Side effect | Hành động làm thay đổi state, ví dụ tạo ticket | Cần confirmation, idempotency và audit |
+| Memory | Dữ liệu app chủ động lưu để dùng lại | Có allowlist, scope, TTL và delete path |
+| Idempotency | Retry cùng request không tạo kết quả trùng | Key phải scope theo actor và gắn với payload |
+| Confirmation | Bằng chứng user duyệt một action cụ thể | Không được suy ra chỉ từ câu model đọc thấy |
+
+Điểm dễ nhầm nhất: text `"tôi xác nhận"` trong prompt vẫn là untrusted input. Với
+demo local, request có `confirmed_actions`; trong production nên đổi nó thành
+confirmation token hoặc approval record do backend phát hành sau thao tác UI đã xác thực.
 
 ## Kiến trúc tổng quan
 
@@ -43,7 +61,8 @@ Client
      -> PromptBuilder: render prompt versioned
      -> LLMClient: sinh structured action
      -> Schema Validator: Pydantic validate JSON
-     -> ToolExecutor: allowlist + policy + timeout + idempotency
+     -> ToolExecutor: allowlist + policy + budget + idempotency
+         -> real tool client: connect/read/total timeout
      -> MemoryStore: save safe memory updates
      -> Structured Logs: trace_id, latency, tool calls, errors
   -> Response
@@ -51,15 +70,16 @@ Client
 
 Flow chuẩn:
 
-1. API nhận `user_id`, `session_id`, `message`, `idempotency_key`.
+1. API nhận `user_id`, `session_id`, `message`, `idempotency_key` và confirmation context.
 2. Service load `recent_messages` và user memory allowlist.
 3. Prompt builder render system prompt với policy, schema, tools và memory summary.
 4. LLM trả JSON theo `AssistantAction`.
 5. Backend validate JSON bằng Pydantic.
-6. Nếu action là `call_tool`, tool executor kiểm tra allowlist, args, confirmation, idempotency.
-7. Service đưa tool result vào prompt lần hai để model tạo final answer.
-8. Service cập nhật memory nếu key nằm trong allowlist.
-9. Service ghi structured log với `trace_id` và trả response.
+6. Nếu action là `call_tool`, tool executor kiểm tra allowlist, args, trusted confirmation và idempotency.
+7. Service đưa tool result vào prompt lần sau; model có thể trả final answer hoặc đề xuất tool tiếp theo.
+8. Service dừng khi có final answer hoặc chạm `MAX_TOOL_CALLS=2`.
+9. Service cập nhật memory nếu key và value đều qua policy.
+10. Service ghi structured log với `trace_id`, retry/tool count và trả response.
 
 ## Structured output contract
 
@@ -83,8 +103,10 @@ Business rules quan trọng:
 - `action="answer"` phải có `final_answer`.
 - `action="ask_clarification"` phải có `final_answer`.
 - `action="call_tool"` phải có `tool`.
-- `memory_updates` chỉ nhận key an toàn như `preferred_language`, `product_area`, `role`.
+- `memory_updates` chỉ nhận key preference an toàn như `preferred_language`,
+  `product_area`, `timezone`, `communication_style`.
 - Args do LLM sinh ra luôn bị xem là untrusted input.
+- Schema dùng `extra="forbid"` để field lạ không bị bỏ qua âm thầm.
 
 ## Prompt template
 
@@ -114,18 +136,27 @@ Policy: read-only, top_k từ 1 đến 5, timeout ngắn
 Tool 2: `create_ticket`
 
 ```text
-Input: title, summary, priority, user_confirmed
+Input do model đề xuất: title, summary, priority
 Output: ticket_id, status
-Policy: chỉ tạo khi user_confirmed=true, cần idempotency_key
+Policy: context phải có trusted confirmation cho create_ticket và idempotency_key
 ```
 
 Nguyên tắc:
 
 - Chỉ tool nằm trong allowlist mới được chạy.
 - Validate args bằng schema riêng cho từng tool.
-- Side effect phải có confirmation và idempotency.
-- Có `MAX_TOOL_CALLS`, timeout và structured error.
+- Validation error chỉ trả error code/path đã redaction, không echo raw input nhạy cảm.
+- Side effect phải có confirmation từ application context, không dùng boolean do model sinh.
+- Idempotency key scope theo user/tenant và phải map tới cùng request payload; cùng key
+  nhưng payload khác phải trả `idempotency_conflict`.
+- Có `MAX_TOOL_CALLS`, structured error và timeout trong từng integration client thật.
 - Không truyền secret vào prompt hoặc tool result.
+
+Reference implementation dùng function local nên không giả lập network timeout.
+Production phải đặt connect/read/total timeout ở HTTP/DB/provider client. Bọc một
+side effect blocking bằng thread timeout chỉ làm caller hết chờ; nó không bảo đảm
+operation phía dưới đã bị hủy, vì vậy vẫn cần idempotency và cancellation semantics
+của dependency.
 
 ## Memory policy
 
@@ -134,7 +165,8 @@ Memory trong bài này là application-owned store, không phải "niềm tin" v
 Loại memory:
 
 - Short-term: vài message gần nhất trong session.
-- Long-term profile: preference nhỏ theo user, ví dụ `preferred_language`, `product_area`, `role`.
+- Long-term profile: preference nhỏ theo user, ví dụ `preferred_language`,
+  `product_area`, `timezone`, `communication_style`.
 - Summary: có thể thêm sau để giảm token khi hội thoại dài.
 
 Schema tối thiểu:
@@ -152,7 +184,9 @@ Policy:
 
 - Scope theo user/tenant, không dùng global key mơ hồ.
 - Chỉ lưu key trong allowlist.
-- Không lưu raw prompt dài nếu có PII.
+- Chặn email, chuỗi giống số thẻ, secret marker, instruction marker, newline và value quá dài.
+- Không lưu `role`, permission hoặc `support_tier` do model đề xuất; các field authorization
+  phải lấy từ identity/CRM đáng tin cậy.
 - Có delete path và TTL nếu dùng cho production.
 - Khi model đề xuất memory update, backend validate lại trước khi ghi.
 
@@ -180,10 +214,13 @@ Lưu ý: nếu tool `create_ticket` đã chạy thành công, retry final answer
 Với tool có side effect, cùng một request retry có thể bị gửi lại vì timeout, network error hoặc schema retry. `create_ticket` cần idempotency:
 
 ```text
-idempotency_key = user_id + session_id + client_request_id
+storage_key = (authenticated_user_or_tenant, idempotency_key)
+request_fingerprint = sha256(canonical_validated_tool_args)
 ```
 
-Nếu key đã tồn tại, tool trả lại `ticket_id` cũ thay vì tạo ticket mới.
+Nếu key đã tồn tại với cùng fingerprint, tool trả lại `ticket_id` cũ. Nếu payload
+khác, trả conflict thay vì replay nhầm action. Database production cần unique
+constraint và transaction; dictionary in-memory chỉ minh họa contract.
 
 ## Trace và logging
 
@@ -235,6 +272,7 @@ Test các case sau:
 - Knowledge base snippet chứa instruction độc hại.
 - Người dùng yêu cầu lộ system prompt hoặc tool schema nội bộ.
 - Người dùng ép tạo ticket khi chưa confirm.
+- Người dùng viết chữ "tôi xác nhận" nhưng không có confirmation context đáng tin cậy.
 - Người dùng đưa secret và yêu cầu ghi nhớ.
 
 Backend không thể chỉ dựa vào prompt để an toàn. Tool executor, schema validation, memory allowlist và logging redaction mới là lớp kiểm soát chính.
@@ -250,9 +288,14 @@ Có thể dùng làm nền cho production nếu thay các phần demo bằng h�
 - Có golden tests trước khi đổi model/prompt/tool schema.
 - Có observability: trace, metrics, alert theo error rate, latency, tool failures.
 - Có human handoff cho case high-risk hoặc low-confidence.
+- Confirmation production dùng signed token/approval record gắn với actor, action,
+  resource, expiry và payload hash.
 
 Không nên đưa thẳng bản demo vào production vì memory và ticket store là in-memory, chưa có auth thật, chưa có distributed lock, chưa có PII compliance và chưa tích hợp provider LLM thật.
 
 ## Kết quả cuối bài
 
-Bạn nên đọc và chạy thư mục `assistant_app/` trong bài này. Nó là reference implementation tối giản nhưng thể hiện các boundary quan trọng: API, prompt, schema, tools, memory, idempotency, trace, retry và tests.
+Bạn nên đọc và chạy thư mục `assistant_app/` trong bài này. Nó là reference
+implementation tối giản nhưng thể hiện các boundary quan trọng: API, prompt,
+schema, trusted confirmation, tool budget, memory policy, scoped idempotency,
+trace, retry và tests.

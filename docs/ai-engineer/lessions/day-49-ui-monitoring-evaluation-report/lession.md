@@ -16,6 +16,18 @@ Sau bài này, capstone của bạn cần có bề mặt demo và bằng chứng
 
 Day 49 biến backend/API của Day 48 thành capstone có thể demo và review. UI không cần phức tạp, nhưng phải cho thấy answer có citation, source nào được dùng, request chậm ở đâu, tốn bao nhiêu token/cost và user có hài lòng không. Evaluation report là bằng chứng rằng RAG system được đo lường nghiêm túc, không chỉ "chat thử thấy đúng".
 
+## 0. Phân Biệt Log, Trace Và Metric
+
+| Signal | Trả lời câu hỏi | Ví dụ |
+|---|---|---|
+| Log | Sự kiện gì đã xảy ra? | validator fail, provider timeout |
+| Trace | Một request đi qua các stage nào? | retrieve -> rerank -> generate |
+| Metric | Xu hướng toàn hệ thống ra sao? | p95 latency, error rate, cost/request |
+
+`trace_id` nối UI với backend evidence. Metric dùng để phát hiện xu hướng; trace dùng
+để điều tra một request; log lưu event có schema ổn định. Không thay một signal bằng
+signal khác.
+
 ## 1. UI Scope Cho Capstone
 
 UI capstone nên chứng minh workflow production, không cần thành full enterprise portal.
@@ -75,6 +87,7 @@ Response:
       "page": 4,
       "section": "Nghỉ phép năm",
       "chunk_id": "hr_policy_001:v1:0007",
+      "document_version": "v3",
       "score": 0.87
     }
   ],
@@ -89,7 +102,9 @@ Response:
     "input_tokens": 1180,
     "output_tokens": 96,
     "estimated_cost_usd": 0.0021
-  }
+  },
+  "policy_action": "allow",
+  "needs_escalation": false
 }
 ```
 
@@ -162,6 +177,10 @@ Reason categories:
 
 Feedback phải gắn với `trace_id`. Nếu chỉ lưu thumbs down mà không có trace, bạn không biết fail do retrieval, reranker, prompt hay LLM.
 
+Feedback endpoint nên có idempotency hoặc unique constraint theo
+`trace_id + reviewer/session`, tránh double click tạo nhiều event. Comment phải qua
+redaction và retention policy giống log.
+
 ## 5. Monitoring Metrics
 
 Metrics tối thiểu:
@@ -174,7 +193,7 @@ Metrics tối thiểu:
 | Cost | cost/request | Ước tính vận hành |
 | Retrieval | empty retrieval rate | Indexing/query issue |
 | Retrieval | top_k/rerank_top_k/context_top_k | Debug config |
-| Citation | citation correctness/failure rate | Chống cite sai |
+| Citation | validity và correctness | Phân biệt ID hợp lệ với semantic support |
 | Quality | thumbs down rate | User signal |
 | Reliability | timeout/error rate | Production health |
 | Security | ACL denial/leak count | Data protection |
@@ -221,6 +240,14 @@ Structured log mẫu:
 
 Không log raw question nếu có PII. Dùng hash hoặc redacted text.
 
+Với hệ thống metrics kiểu Prometheus:
+
+- Dùng base unit như seconds, không đặt tên metric histogram bằng milliseconds.
+- Counter tích lũy nên có suffix `_total`.
+- Không dùng `user_id`, email, `trace_id` hoặc giá trị không giới hạn làm label.
+- `tenant_id` chỉ nên ở trace/log có access control; nếu cần metric, dùng segment hữu
+  hạn như `tenant_tier`.
+
 ## 6. Dashboard Hoặc Report?
 
 Với capstone, bạn có thể chọn report tĩnh thay vì dashboard phức tạp.
@@ -246,6 +273,7 @@ Report cần trả lời:
 - Eval chạy trên version nào?
 - Có bao nhiêu cases?
 - Metrics hiện tại so với threshold thế nào?
+- Mỗi metric áp dụng cho bao nhiêu case?
 - Failures chính thuộc layer nào?
 - Release decision là gì?
 - Limitations là gì?
@@ -299,6 +327,7 @@ type Citation = {
   page?: number;
   section?: string;
   chunk_id: string;
+  document_version?: string;
   score?: number;
 };
 
@@ -312,6 +341,8 @@ type QueryResponse = {
     output_tokens: number;
     estimated_cost_usd: number;
   };
+  policy_action: "allow" | "refuse" | "escalate";
+  needs_escalation: boolean;
 };
 ```
 
@@ -319,24 +350,37 @@ Fetch wrapper:
 
 ```typescript
 async function askQuestion(question: string): Promise<QueryResponse> {
-  const response = await fetch("/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      question,
-      tenant_id: "demo",
-      user_id: "reviewer",
-      roles: ["employee"],
-      conversation_id: "demo-session-001"
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        question,
+        tenant_id: "demo",
+        user_id: "reviewer",
+        roles: ["employee"],
+        conversation_id: "demo-session-001"
+      })
+    });
 
-  if (!response.ok) {
-    throw new Error(`Query failed: ${response.status}`);
+    if (!response.ok) {
+      const traceId = response.headers.get("x-trace-id");
+      throw new Error(`Query failed: ${response.status}; trace=${traceId ?? "n/a"}`);
+    }
+    return await response.json() as QueryResponse;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return response.json();
 }
 ```
+
+Type assertion `as QueryResponse` không validate JSON ở runtime. Bản production nên
+generate client/type từ OpenAPI và validate response ở trust boundary; tối thiểu hãy
+test contract giữa UI và API. Abort ở client cũng không thay timeout/cancellation ở
+backend.
 
 UX states cần có:
 
@@ -394,6 +438,19 @@ Không nên claim production-ready nếu:
 - [ ] Có feedback thumbs up/down gắn trace.
 - [ ] Có structured logs đã redact.
 - [ ] Có metrics summary.
+- [ ] Metric labels không chứa user/trace/high-cardinality value.
 - [ ] Có golden eval run mới nhất.
 - [ ] Có `evaluation_report.md`.
 - [ ] Có release decision.
+
+## Quiz Tự Kiểm Tra
+
+1. Metric và trace khác nhau ở mục đích nào?
+2. Tại sao không dùng `trace_id` làm Prometheus label?
+3. UI nhận HTTP 200 có đủ để tin response đúng schema không?
+4. Citation ID hợp lệ có chứng minh answer đúng không?
+5. Khi report không có case prompt injection, block rate nên là gì?
+
+Đáp án: (1) aggregate trend và request-level investigation; (2) cardinality không
+giới hạn; (3) chưa, cần runtime/contract validation; (4) chưa; (5) `N/A` và CI fail
+nếu metric đó là gate bắt buộc.

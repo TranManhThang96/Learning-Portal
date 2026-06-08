@@ -58,7 +58,7 @@ from sklearn.datasets import fetch_openml, make_classification
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import accuracy_score, average_precision_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -93,12 +93,12 @@ class SchemaValidationError(ValueError):
 def load_titanic_or_fallback() -> tuple[pd.DataFrame, str]:
     """Load Titanic from OpenML; fallback keeps the exercise runnable offline."""
     try:
-        titanic = fetch_openml("titanic", version=1, as_frame=True, parser="auto")
+        titanic = fetch_openml(name="titanic", version=1, as_frame=True)
         frame = titanic.frame
         df = frame[["pclass", "sex", "age", "sibsp", "parch", "fare", "embarked", "survived"]].copy()
         df["survived"] = df["survived"].astype(int)
         return df, "openml_titanic_v1"
-    except Exception as exc:
+    except (OSError, TimeoutError) as exc:
         print(f"OpenML unavailable, using synthetic fallback. Reason: {exc}")
         X, y = make_classification(
             n_samples=1309,
@@ -195,7 +195,9 @@ def build_preprocessor() -> ColumnTransformer:
     categorical_pipeline = Pipeline(
         steps=[
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore")),
+            # Titanic has low cardinality. Dense output keeps this shared
+            # preprocessor compatible with HistGradientBoostingClassifier.
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]
     )
     return ColumnTransformer(
@@ -261,6 +263,7 @@ def evaluate_pipeline(
         "recall": recall_score(y_test, y_pred, zero_division=0),
         "f1": f1_score(y_test, y_pred, zero_division=0),
         "roc_auc": roc_auc_score(y_test, y_score),
+        "average_precision": average_precision_score(y_test, y_score),
         "train_ms": train_ms,
         "predict_ms_per_row": predict_ms / len(X_test),
     }
@@ -284,12 +287,19 @@ def train() -> None:
     X = df[FEATURES]
     y = df[TARGET].astype(int)
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    X_dev, X_test, y_dev, y_test = train_test_split(
         X,
         y,
         test_size=0.2,
         random_state=RANDOM_STATE,
         stratify=y,
+    )
+    X_train, X_valid, y_train, y_valid = train_test_split(
+        X_dev,
+        y_dev,
+        test_size=0.25,
+        random_state=RANDOM_STATE,
+        stratify=y_dev,
     )
 
     results: list[dict[str, float | str]] = []
@@ -302,15 +312,33 @@ def train() -> None:
                 ("model", model),
             ]
         )
-        metrics, fitted = evaluate_pipeline(name, pipeline, X_train, X_test, y_train, y_test)
+        metrics, fitted = evaluate_pipeline(
+            name,
+            pipeline,
+            X_train,
+            X_valid,
+            y_train,
+            y_valid,
+        )
         results.append(metrics)
         trained[name] = fitted
 
     summary = pd.DataFrame(results).sort_values(["roc_auc", "f1"], ascending=False)
+    print("Validation metrics used for model selection:")
     print(summary.to_string(index=False))
 
     best_name = str(summary.iloc[0]["model"])
     best_pipeline = trained[best_name]
+    test_metrics, best_pipeline = evaluate_pipeline(
+        best_name,
+        best_pipeline,
+        X_dev,
+        X_test,
+        y_dev,
+        y_test,
+    )
+    print("Final test metrics (evaluated once after selection):")
+    print(pd.DataFrame([test_metrics]).to_string(index=False))
     joblib.dump(best_pipeline, MODEL_PATH)
 
     metadata = {
@@ -324,7 +352,9 @@ def train() -> None:
         "features": FEATURES,
         "random_state": RANDOM_STATE,
         "test_size": 0.2,
-        "metrics": summary.to_dict(orient="records"),
+        "validation_size_within_dev": 0.25,
+        "validation_metrics": summary.to_dict(orient="records"),
+        "test_metrics": test_metrics,
         "runtime": {
             "python": platform.python_version(),
             "platform": platform.platform(),
@@ -381,7 +411,8 @@ Kết quả kỳ vọng:
 
 - In dataset source: `openml_titanic_v1` hoặc `synthetic_fallback`.
 - In missing ratio và target distribution.
-- In bảng metrics của 3 models.
+- In validation metrics của 3 models để chọn candidate.
+- In test metrics đúng một lần cho model đã chọn.
 - Tạo `artifacts/day4_titanic/model.joblib`.
 - Tạo `artifacts/day4_titanic/metadata.json`.
 - In sample prediction dạng JSON.
@@ -391,12 +422,13 @@ Kết quả kỳ vọng:
 Mở `metadata.json` và kiểm tra:
 
 - Model nào được chọn?
-- `roc_auc`, `f1`, `precision`, `recall` của model tốt nhất là bao nhiêu?
+- Validation metrics có được tách khỏi `test_metrics` không?
+- `roc_auc`, `average_precision`, `f1`, `precision`, `recall` trên test của model đã chọn là bao nhiêu?
 - `predict_ms_per_row` có khác nhiều giữa các model không?
 - `dataset_source` là OpenML hay fallback?
 - Feature list có đủ raw và derived features không?
 
-Không chọn model chỉ vì accuracy cao. Với bài toán sinh tồn Titanic, đây là exercise học stack; trong business thật, bạn phải định nghĩa false positive/false negative cost.
+Không chọn model chỉ vì accuracy cao. Với bài toán sinh tồn Titanic, đây là exercise học stack; trong business thật, bạn phải định nghĩa false positive/false negative cost. Nếu positive class hiếm như fraud/churn, hãy thêm Average Precision và ghi rõ implementation/definition khi report.
 
 ## 5. Bài tập mở rộng
 
@@ -467,20 +499,15 @@ day4_project/
 
 ## 6. Câu hỏi bắt buộc: dùng được trong production không?
 
-Trả lời mẫu:
+Viết decision memo 300-500 từ, bắt buộc trả lời:
 
-Có thể dùng pattern này trong production cho tabular classification nhỏ-vừa, nhưng không bê nguyên script demo vào production. Điều kiện cần:
-
-- Dữ liệu training đại diện cho production traffic.
-- Split strategy phản ánh cách model sẽ gặp dữ liệu thật, đặc biệt nếu có yếu tố thời gian.
-- Pipeline artifact được build trong CI/training job có kiểm soát.
-- Có schema validation ở API/batch boundary.
-- Có artifact registry hoặc storage versioned.
-- Có monitoring drift và model quality.
-- Có rollback khi metrics production giảm.
-- Có security policy: không load `joblib` từ nguồn untrusted.
-
-Nếu inference throughput rất cao, cần benchmark kỹ Pandas single-row overhead. Có thể cần batch inference, feature service tối ưu hơn, hoặc chuyển một phần transform ra service/language phù hợp.
+- Dataset và split có mô phỏng production traffic không?
+- Model được chọn bằng validation hay test?
+- Artifact được build, version, scan và rollback thế nào?
+- API/batch boundary validate schema và range ra sao?
+- Monitor drift, model quality, latency và unknown category thế nào?
+- Khi nào Pandas single-row overhead hoặc dense one-hot không còn chấp nhận được?
+- Vì sao chỉ được load `joblib` từ trusted storage?
 
 ## 7. Checklist nộp bài
 
@@ -490,6 +517,7 @@ Nếu inference throughput rất cao, cần benchmark kỹ Pandas single-row ove
 - [ ] Có `Pipeline` chứa preprocessing và model.
 - [ ] Có ít nhất 3 models.
 - [ ] Có metrics table.
+- [ ] Test set chỉ được dùng sau khi chọn model.
 - [ ] Có `model.joblib`.
 - [ ] Có `metadata.json`.
 - [ ] Có sample prediction.

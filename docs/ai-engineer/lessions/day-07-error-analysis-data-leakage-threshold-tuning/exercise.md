@@ -9,7 +9,7 @@ Bạn sẽ chạy một workflow gần production cho churn classification:
 - Dùng `OneHotEncoder(handle_unknown="ignore")` để tránh crash khi gặp category mới.
 - Fit calibration bằng `CalibratedClassifierCV`.
 - Sweep threshold từ `0.30` đến `0.80`.
-- Tạo confusion matrix, precision, recall, F1, ROC-AUC, PR-AUC.
+- Tạo confusion matrix, precision, recall, F1, ROC-AUC và Average Precision.
 - Chọn threshold theo business constraint.
 - Slice metrics theo segment.
 - Xuất top false positives, false negatives và near-threshold samples.
@@ -35,6 +35,10 @@ Nếu muốn biến baseline gates thành lỗi CI:
 ```bash
 python3 lessions/day-07-error-analysis-data-leakage-threshold-tuning/exercise.py --enforce-gates
 ```
+
+Lưu ý: với synthetic dataset mặc định, lệnh `--enforce-gates` có thể fail ở gate segment như `min_contract_recall`. Đây là hành vi có chủ đích để bạn thấy CI nên chặn model/threshold chưa đạt guardrail; chạy không có flag này nếu chỉ muốn đọc toàn bộ report.
+
+Các lệnh trên giả định terminal đang ở root repository `ai-engineer`.
 
 Dependencies:
 

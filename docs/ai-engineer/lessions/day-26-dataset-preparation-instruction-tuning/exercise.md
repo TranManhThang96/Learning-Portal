@@ -137,9 +137,12 @@ Dataset chỉ đạt khi:
 
 - [ ] Có khoảng 500 rows sau dedup/filter.
 - [ ] `errors: 0`.
+- [ ] Command trả exit code `0`; nếu có error, script không tạo/cập nhật `dataset_split.jsonl`.
 - [ ] Không có record `needs_review`.
 - [ ] Có đủ train/validation/test.
 - [ ] Split không trộn cùng `group_id`.
+- [ ] `metadata.json` có `input_sha256` và `automated_checks_passed=true`.
+- [ ] Hiểu rằng `production_ready=false` cho tới khi human/privacy/license/eval review hoàn tất.
 - [ ] Dataset card không còn placeholder quan trọng.
 
 ## Phần 5: Tạo golden set cho Day 28
@@ -168,6 +171,7 @@ Trả lời trong `validation_report.md` hoặc file riêng:
 6. Split có theo `group_id` không?
 7. Dataset này dùng được trong production không? Nếu có thì cần điều kiện gì?
 8. Rủi ro còn lại lớn nhất là gì?
+9. Tokenizer/chat template nào sẽ dùng ở Day 27, và bạn đã inspect record sau render chưa?
 
 ## Rubric tự chấm
 

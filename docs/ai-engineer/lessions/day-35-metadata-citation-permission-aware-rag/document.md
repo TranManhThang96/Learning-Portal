@@ -98,7 +98,7 @@ Security boundary nằm ở RAG API/Retriever, không nằm trong prompt.
 
 ## 3. Code Mẫu Python
 
-Code dưới đây không phụ thuộc framework để dễ đọc, nhưng tổ chức theo hướng có thể đưa vào service thật: auth context rõ ràng, deny-by-default, context builder tạo source map, citation validator và audit event.
+Code dưới đây không phụ thuộc framework để dễ đọc, nhưng tổ chức theo hướng có thể đưa vào service thật: auth context rõ ràng, deny-by-default, context builder tạo source map, citation validator và audit event. `build_vector_filter` tạo policy AST nội bộ; không truyền dict đó thẳng vào SDK vendor nếu chưa có adapter và contract test.
 
 ```python
 from __future__ import annotations
@@ -184,7 +184,7 @@ def build_vector_filter(user: UserContext) -> dict[str, Any]:
     return {
         "must": [
             {"key": "tenant_id", "match": user.tenant_id},
-            {"key": "deleted_at", "is_null": True},
+            {"key": "deleted", "match": False},
         ],
         "should": [
             {"key": "visibility", "match": "public_to_tenant"},
@@ -211,9 +211,9 @@ def build_context(
     context_blocks: list[str] = []
     used_chars = 0
 
-    for idx, chunk in enumerate(visible_chunks, start=1):
+    for chunk in visible_chunks:
         meta = chunk.metadata
-        source_id = f"S{idx}"
+        source_id = f"S{len(source_map) + 1}"
         section_path = list(meta.get("section_path") or [])
         section_text = " > ".join(section_path) if section_path else "Unknown section"
         title = meta.get("document_title") or chunk.document_id
@@ -227,7 +227,7 @@ def build_context(
             f"Text: {chunk.text}\n"
         )
         if used_chars + len(block) > max_chars:
-            break
+            continue
 
         source_map[source_id] = SourceRef(
             source_id=source_id,
@@ -302,14 +302,14 @@ def build_audit_event(
     visible: list[Chunk],
     source_map: dict[str, SourceRef],
     citation_errors: list[str],
+    redacted_query: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    event = {
         "trace_id": trace_id,
         "timestamp": datetime.now(UTC).isoformat(),
         "user_id": user.user_id,
         "tenant_id": user.tenant_id,
         "query_hash": hash_for_log(query),
-        "query_redacted": query[:300],
         "permission_snapshot": {
             "roles": sorted(user.roles),
             "groups": sorted(user.groups),
@@ -320,7 +320,65 @@ def build_audit_event(
         "context_source_ids": list(source_map.keys()),
         "citation_errors": citation_errors,
     }
+    if redacted_query is not None:
+        event["query_redacted"] = redacted_query[:300]
+    return event
 ```
+
+Không gọi `query[:300]` là redaction: cắt ngắn chuỗi vẫn có thể giữ nguyên PII, secret hoặc dữ liệu hợp đồng. Chỉ truyền `redacted_query` khi một redaction pipeline đã được kiểm thử; mặc định chỉ log hash.
+
+### Qdrant adapter hiện hành
+
+Ví dụ dưới đây chuyển policy sang `qdrant-client`. Vector payload cần có `deleted: false`; canonical store vẫn giữ `deleted_at` để audit lifecycle.
+
+```python
+from qdrant_client import models
+
+
+def build_qdrant_filter(user: UserContext) -> models.Filter:
+    visible_conditions = [
+        models.FieldCondition(
+            key="visibility",
+            match=models.MatchValue(value="public_to_tenant"),
+        )
+    ]
+    if user.roles:
+        visible_conditions.append(
+            models.FieldCondition(
+                key="acl_roles",
+                match=models.MatchAny(any=sorted(user.roles)),
+            )
+        )
+    if user.groups:
+        visible_conditions.append(
+            models.FieldCondition(
+                key="acl_groups",
+                match=models.MatchAny(any=sorted(user.groups)),
+            )
+        )
+    visible_conditions.append(
+        models.FieldCondition(
+            key="acl_users",
+            match=models.MatchAny(any=[user.user_id]),
+        )
+    )
+
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="tenant_id",
+                match=models.MatchValue(value=user.tenant_id),
+            ),
+            models.FieldCondition(
+                key="deleted",
+                match=models.MatchValue(value=False),
+            ),
+        ],
+        should=visible_conditions,
+    )
+```
+
+Tạo payload index kiểu `KEYWORD` cho tenant/visibility/ACL và kiểu `BOOL` cho `deleted`. Dù đã pre-filter trong Qdrant, vẫn chạy `can_read` trước context builder để defense-in-depth.
 
 ## 4. Test Cases Tối Thiểu
 
@@ -493,7 +551,7 @@ def answer_question(user: UserContext, query: str) -> dict:
 ## 6. Production Readiness Checklist
 
 - Metadata có `tenant_id`, ACL, source, page/section, version và tombstone.
-- Retriever dùng pre-filter cho tenant/ACL/deleted_at.
+- Retriever dùng pre-filter cho tenant/ACL/deleted state.
 - Backend vẫn post-filter trước context builder.
 - Context builder tạo `source_map`, không để LLM tự tạo source.
 - Citation validator reject source không tồn tại hoặc không visible.
@@ -502,3 +560,11 @@ def answer_question(user: UserContext, query: str) -> dict:
 - Cache key có tenant/user/permission version.
 - Audit log redacted, có retention và access control.
 - Regression tests chạy trong CI.
+
+## 7. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+- [Qdrant filtering](https://qdrant.tech/documentation/concepts/filtering/): `must`, `should`, `MatchValue`, `MatchAny` và payload filtering.
+- [Qdrant Python client](https://github.com/qdrant/qdrant-client): `Filter`, `FieldCondition`, payload indexes và `query_points`.
+- [pgvector](https://github.com/pgvector/pgvector): filtered nearest-neighbor query và iterative scans khi ACL filter làm candidate set nhỏ.
+
+Authorization semantics vẫn thuộc ứng dụng của bạn. Vector DB filter chỉ là một enforcement layer; directory/policy service, post-filter và regression test mới tạo thành boundary đầy đủ.

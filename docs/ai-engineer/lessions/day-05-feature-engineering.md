@@ -1,10 +1,10 @@
 # Day 5: Feature Engineering
 
-Bài học Day 5 đã được tách thành folder riêng để dễ học, dễ tra cứu và dễ thực hành.
+Bắt đầu từ bài học chính; reference và exercise có vai trò tách biệt.
 
 ## Nội dung
 
-- [Bài học chính](./day-05-feature-engineering/lession.md): tư duy feature engineering, leakage, schema, pipeline và production concerns.
+- [Bài học chính](./day-05-feature-engineering/lession.md): toàn bộ tư duy feature engineering, point-in-time correctness, schema, pipeline và production concerns.
 - [Tài liệu tham khảo](./day-05-feature-engineering/document.md): decision matrix, checklist và quy tắc chọn kỹ thuật theo context.
 - [Bài tập thực hành](./day-05-feature-engineering/exercise.md): xây pipeline scikit-learn gần production cho churn prediction.
 

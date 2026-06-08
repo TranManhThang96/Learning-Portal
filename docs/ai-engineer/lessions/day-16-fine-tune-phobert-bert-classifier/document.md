@@ -38,6 +38,15 @@ text,label
 "tạm được, chưa có gì đặc biệt",neutral
 ```
 
+Nếu nhiều dòng có cùng nguồn hoặc là biến thể gần nhau, thêm `group_id`:
+
+```csv
+text,label,group_id
+"sản phẩm tốt",positive,review-001
+"review: sản phẩm tốt",positive,review-001
+"hàng bị lỗi",negative,review-002
+```
+
 Yêu cầu:
 
 - Cột `text` là string, không rỗng sau khi trim.
@@ -45,6 +54,7 @@ Yêu cầu:
 - Không chứa duplicate exact hoặc near-duplicate giữa train/validation/test.
 - Nếu text có PII, cần masking hoặc policy không log raw text.
 - Nếu có metadata như channel/product/date, nên giữ để error analysis.
+- Nếu có `group_id`, toàn bộ rows của một group phải cùng label và cùng split.
 
 ## 3. Label Guideline Template
 
@@ -71,6 +81,12 @@ Với production data có thời gian:
 - Dùng time-based split để mô phỏng tương lai.
 - Ví dụ train trên tháng 1-3, validation tháng 4, test tháng 5.
 - Tránh random split nếu duplicate/campaign làm leakage.
+
+Với review có nhiều biến thể hoặc nhiều message từ cùng conversation/customer:
+
+- Split theo `group_id`, conversation ID hoặc source document ID.
+- Chạy assertion giao của tập group giữa train/validation/test bằng rỗng.
+- Synthetic fallback trong `train_sentiment.py` dùng grouped split để không tự tạo metric ảo.
 
 ## 5. Metrics Template
 
@@ -285,3 +301,5 @@ Nếu thiếu các điều kiện này, chỉ nên gọi là prototype hoặc in
 
 - `/websites/huggingface_co_transformers_main`: tokenizer parameters, `AutoModelForSequenceClassification`, `Trainer`, `TrainingArguments`, dynamic padding và model save/load pattern.
 - `/fastapi/fastapi`: `lifespan` để load ML model một lần, Pydantic request validation, endpoint pattern.
+- Hugging Face Transformers docs: <https://huggingface.co/docs/transformers/main/en/index>
+- FastAPI lifespan docs: <https://fastapi.tiangolo.com/advanced/events/>

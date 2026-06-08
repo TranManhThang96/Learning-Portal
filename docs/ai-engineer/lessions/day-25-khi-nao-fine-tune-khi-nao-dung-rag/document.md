@@ -378,3 +378,24 @@ Optimization candidates:
 | LoRA/QLoRA | Có dataset sạch, eval, registry, rollback | Train trên raw sensitive data, không canary |
 | Full fine-tune | Có MLOps mạnh, data lớn, regression suite | Chỉ để sửa vài lỗi prompt |
 | Distillation | Có teacher tốt, task hẹp, eval chặt | Task mở, cần reasoning rộng, không golden set |
+
+## 12. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+Đối chiếu ngày 2026-06-08:
+
+- [Hugging Face PEFT](https://huggingface.co/docs/peft/index):
+  parameter-efficient fine-tuning, adapter lifecycle và integration.
+- [PEFT LoRA developer guide](https://huggingface.co/docs/peft/developer_guides/lora):
+  `LoraConfig`, target modules, trainable parameters, multiple adapters và merge.
+- [PEFT quantization guide](https://huggingface.co/docs/peft/developer_guides/quantization):
+  chuẩn bị quantized base model cho PEFT/QLoRA và các backend quantization.
+- [LoRA paper](https://arxiv.org/abs/2106.09685):
+  low-rank adaptation giữ frozen pretrained weights và train low-rank matrices.
+- [QLoRA paper](https://arxiv.org/abs/2305.14314):
+  fine-tuning LoRA qua quantized pretrained model để giảm memory.
+- [Retrieval-Augmented Generation paper](https://arxiv.org/abs/2005.11401):
+  kết hợp parametric model với non-parametric retrieval memory.
+
+Tên API/package thay đổi nhanh. Khi sang Day 27, pin version, lưu base model
+revision/tokenizer revision/adapter config và chạy smoke test `load -> generate ->
+save -> reload -> generate` trước experiment dài.

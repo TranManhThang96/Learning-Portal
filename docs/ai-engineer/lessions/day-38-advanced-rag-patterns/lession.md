@@ -680,11 +680,15 @@ class AdvancedRagRetriever:
 
 Trong code thật, bạn cần thêm:
 
+- Async fan-out: dense và sparse cho các query variants độc lập phải chạy song song có giới hạn concurrency.
+- Timeout có khả năng cancel request thật; phép kiểm tra elapsed time trước loop không ngắt được một network call đang treo.
 - Circuit breaker cho LLM rewriter.
 - Cache theo `tenant_id`, `acl_hash`, `index_version`, normalized query.
 - Structured logging và distributed tracing.
 - Redaction cho logs chứa query nhạy cảm.
 - Eval job chạy trước khi bật feature flag.
+
+Không dùng `asyncio.gather` không giới hạn cho mọi variant. Dùng semaphore/bulkhead theo backend, deadline chung cho retrieval path và fallback về original-query baseline khi rewrite hoặc một retriever timeout.
 
 ## 14. Performance và cost trade-off
 

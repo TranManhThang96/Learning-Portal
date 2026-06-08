@@ -2,7 +2,7 @@
 
 ## Mục tiêu
 
-Bạn sẽ dùng document trong [document.md](./document.md) để so sánh fixed-size, recursive và markdown-aware chunking. Kết quả cần trả lời được:
+Bạn sẽ dùng corpus [acme-refund-policy-v4.md](./acme-refund-policy-v4.md) để so sánh fixed-size, recursive và markdown-aware chunking. `document.md` chỉ là reference về metadata, ground truth và expected observations. Kết quả cần trả lời được:
 
 - Strategy nào retrieve đúng evidence nhất?
 - Strategy nào citation rõ nhất?
@@ -13,7 +13,7 @@ Bạn sẽ dùng document trong [document.md](./document.md) để so sánh fixe
 
 Tạo một script hoặc notebook có các phần:
 
-1. Load document source từ `document.md`.
+1. Load corpus từ `acme-refund-policy-v4.md`.
 2. Tạo chunk bằng 3 strategy:
    - Fixed-size.
    - Recursive.
@@ -52,7 +52,17 @@ Trong bài tập này, mục tiêu chính là hiểu trade-off chunking, không 
 
 ### Bước 1: Chuẩn bị document
 
-Lấy phần nằm trong code block `Document source` của [document.md](./document.md) và lưu thành biến `POLICY_DOC`.
+Load fixture trực tiếp để bài tập không phụ thuộc vào việc parse Markdown của file reference:
+
+```python
+from pathlib import Path
+
+
+FIXTURE_PATH = Path(__file__).with_name("acme-refund-policy-v4.md")
+POLICY_DOC = FIXTURE_PATH.read_text(encoding="utf-8")
+```
+
+Nếu chạy notebook ở thư mục khác, truyền path fixture qua config/CLI thay vì hardcode working directory.
 
 Checklist:
 

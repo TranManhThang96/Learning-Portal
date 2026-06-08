@@ -249,3 +249,24 @@ Nếu được hỏi "nên dùng LangChain hay gọi Raw SDK?", câu trả lời
 Một câu trả lời production-oriented:
 
 > Nếu flow chỉ là một call structured output có SLA chặt, tôi bắt đầu bằng Raw SDK bọc trong internal LLMClient để kiểm soát timeout, retry, schema validation, token/cost và trace. Nếu workflow bắt đầu có nhiều chain, tool integration hoặc cần prototype nhiều provider, tôi cân nhắc LangChain LCEL nhưng sẽ pin version, thêm golden tests và trace từng step. Nếu vấn đề chính là RAG document ingestion/retrieval, tôi đánh giá LlamaIndex. Nếu agent có state, loop, checkpoint hoặc human approval, tôi dùng LangGraph. Quyết định cuối cùng phải dựa trên eval, SLA, observability và năng lực vận hành của team.
+
+## 10. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+Đối chiếu ngày 2026-06-08:
+
+- [OpenAI - Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs):
+  `text.format`, JSON Schema strict, refusal handling và khuyến nghị dùng Pydantic
+  để tránh schema/type divergence.
+- [OpenAI - Migrate to the Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses):
+  Responses API cho project mới, `output_text`, storage behavior và typed output items.
+- [OpenAI - Current model guidance](https://developers.openai.com/api/docs/guides/latest-model):
+  model hiện hành và lưu ý phải benchmark quality/latency/cost khi migrate.
+- [LangChain - ChatOpenAI integration](https://docs.langchain.com/oss/python/integrations/chat/openai):
+  `with_structured_output(..., method="json_schema")` dùng native structured output;
+  nếu không chỉ định, integration có thể dùng function calling.
+- [LlamaIndex documentation](https://developers.llamaindex.ai/python/framework/):
+  ingestion, documents/nodes, indexes, retrievers và query engines.
+- [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview):
+  durable execution, state, persistence và human-in-the-loop.
+- [DSPy documentation](https://dspy.ai/):
+  programmatic prompting và optimization dựa trên metric/evaluation.

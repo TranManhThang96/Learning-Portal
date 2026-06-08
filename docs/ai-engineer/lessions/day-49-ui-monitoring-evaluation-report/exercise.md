@@ -28,6 +28,7 @@ Response phải render:
 - `trace_id`.
 - `latency_ms.total`.
 - `usage.estimated_cost_usd`.
+- `policy_action`.
 
 Acceptance criteria:
 
@@ -35,6 +36,8 @@ Acceptance criteria:
 - Disable submit khi loading.
 - Error không làm mất câu hỏi cũ.
 - Trace ID copy được.
+- `policy_action="refuse"` render thành no-answer/refusal state, không phải success
+  answer thông thường.
 
 ## Bài Tập 2: Citation Panel
 
@@ -69,6 +72,7 @@ Acceptance criteria:
 - `down` bắt buộc chọn reason.
 - Comment giới hạn độ dài.
 - Sau khi submit, UI hiển thị trạng thái đã ghi nhận.
+- Double click/retry không tạo feedback trùng cho cùng trace/session.
 
 ## Bài Tập 4: Trace Summary
 
@@ -108,6 +112,9 @@ Top failure reasons:
 
 Nếu chưa có real traffic, dùng eval run + demo traces và ghi rõ là sample.
 
+Không dùng `user_id`, question hoặc `trace_id` làm metric label. Với latency
+histogram, export seconds và giữ millisecond chỉ ở API/trace nếu contract đã chọn vậy.
+
 ## Bài Tập 6: Evaluation Report
 
 Tạo `evaluation_report.md` theo template trong `document.md`.
@@ -120,6 +127,8 @@ Bắt buộc có:
 - Prompt version.
 - Index version.
 - Metrics table.
+- Applicable case count cho từng metric; metric thiếu evidence hiển thị `N/A`.
+- Faithfulness scorer version/rubric hoặc ghi rõ chưa đo.
 - Results by tag.
 - Top failures.
 - Release decision.
@@ -159,6 +168,7 @@ Mitigation:
 - [ ] Trace/usage panel hiển thị latency/token/cost.
 - [ ] Feedback gắn với trace ID.
 - [ ] Có monitoring summary.
+- [ ] Metric names/labels không tạo high cardinality hoặc lộ PII.
 - [ ] Có evaluation report.
 - [ ] Có release decision dựa trên metrics.
 - [ ] Có ghi rõ limitations.

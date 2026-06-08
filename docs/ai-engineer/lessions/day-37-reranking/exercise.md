@@ -6,8 +6,9 @@ Sau bài tập này bạn sẽ có một pipeline RAG retrieval gần production
 
 ```text
 BM25 top 50 + Vector top 50
+  -> mandatory ACL filters trong từng retriever
   -> RRF merge
-  -> ACL filter
+  -> defense-in-depth ACL assertion
   -> dedupe
   -> rerank top 50
   -> final top 5/10
@@ -35,7 +36,7 @@ Nếu muốn thử Cohere Rerank:
 
 ```bash
 pip install cohere
-export COHERE_API_KEY="..."
+export CO_API_KEY="..."
 ```
 
 ## 2. Dataset và qrels tối thiểu
@@ -68,6 +69,24 @@ QRELS = {
 }
 ```
 
+Auth context dùng xuyên suốt retrieval:
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    tenant_id: str
+    roles: frozenset[str]
+
+
+AUTH_CONTEXT = AuthContext(
+    tenant_id="company_a",
+    roles=frozenset({"employee", "support", "developer"}),
+)
+```
+
 Mở rộng lên ít nhất 30 query nếu muốn kết quả có ý nghĩa hơn. Nên có query tốt, query khó, query tiếng Việt không dấu, acronym, mã lỗi, và query trộn English/Vietnamese.
 
 ## 3. Step 1 - Chạy baseline Hybrid Search
@@ -75,11 +94,11 @@ Mở rộng lên ít nhất 30 query nếu muốn kết quả có ý nghĩa hơn
 Từ Day 36, viết hàm trả về danh sách `chunk_id` sau RRF, chưa rerank.
 
 ```python
-def run_hybrid_only(query: str, top_k: int = 10) -> list[str]:
-    bm25_hits = bm25_search(query, top_k=50)
-    vector_hits = vector_search(query, top_k=50)
+def run_hybrid_only(query: str, auth: AuthContext, top_k: int = 10) -> list[str]:
+    bm25_hits = bm25_search(query, auth=auth, top_k=50)
+    vector_hits = vector_search(query, auth=auth, top_k=50)
     merged = reciprocal_rank_fusion([bm25_hits, vector_hits])
-    permitted = acl_filter(merged)
+    permitted = acl_filter(merged, auth=auth)  # defense-in-depth
     deduped = dedupe(permitted)
     return [hit.chunk_id for hit in deduped[:top_k]]
 ```
@@ -132,11 +151,15 @@ class LocalBgeReranker:
 Pipeline:
 
 ```python
-def run_hybrid_plus_rerank(query: str, reranker: LocalBgeReranker) -> list[str]:
-    bm25_hits = bm25_search(query, top_k=50)
-    vector_hits = vector_search(query, top_k=50)
+def run_hybrid_plus_rerank(
+    query: str,
+    auth: AuthContext,
+    reranker: LocalBgeReranker,
+) -> list[str]:
+    bm25_hits = bm25_search(query, auth=auth, top_k=50)
+    vector_hits = vector_search(query, auth=auth, top_k=50)
     merged = reciprocal_rank_fusion([bm25_hits, vector_hits])
-    permitted = acl_filter(merged)
+    permitted = acl_filter(merged, auth=auth)  # defense-in-depth
     deduped = dedupe(permitted)
 
     candidates = [hit.to_dict() for hit in deduped[:50]]
@@ -158,7 +181,7 @@ import cohere
 
 class CohereRerankClient:
     def __init__(self, model: str = "rerank-v4.0-pro") -> None:
-        self.client = cohere.Client(token=os.environ["COHERE_API_KEY"])
+        self.client = cohere.Client(token=os.environ["CO_API_KEY"])
         self.model = model
 
     def rerank(self, query: str, candidates: list[dict], top_n: int = 10) -> list[dict]:
@@ -223,13 +246,13 @@ Chạy:
 
 ```python
 hybrid_run = {
-    item["query_id"]: run_hybrid_only(item["query"], top_k=10)
+    item["query_id"]: run_hybrid_only(item["query"], AUTH_CONTEXT, top_k=10)
     for item in QUERIES
 }
 
 reranker = LocalBgeReranker()
 rerank_run = {
-    item["query_id"]: run_hybrid_plus_rerank(item["query"], reranker)
+    item["query_id"]: run_hybrid_plus_rerank(item["query"], AUTH_CONTEXT, reranker)
     for item in QUERIES
 }
 

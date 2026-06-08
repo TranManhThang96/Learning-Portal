@@ -100,6 +100,8 @@ ReAct = reasoning + acting. Trong implementation hiện đại, không expose ch
 
 Ví dụ này có chủ đích nhỏ nhưng cấu trúc gần production: typed tools, system policy, timeout giả lập ở tool boundary, `recursion_limit`, `thread_id` và trace metadata.
 
+Giải thích nhanh cho người mới: `recursion_limit` không phải retry count. Nó là số bước graph tối đa cho một lần chạy, giúp agent không bị loop vô hạn giữa `agent -> tools -> agent`. `thread_id` là khóa để checkpointer biết state nào thuộc cùng một cuộc hội thoại/workflow.
+
 ```python
 from __future__ import annotations
 
@@ -138,8 +140,7 @@ def get_order_status(order_id: str) -> str:
 TOOLS = [search_policy, get_order_status]
 
 model = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
-    temperature=0,
+    model=os.getenv("OPENAI_MODEL", "gpt-5.5"),
     timeout=20,
     max_retries=2,
 ).bind_tools(TOOLS)
@@ -201,6 +202,10 @@ print(result["messages"][-1].content)
 - Graph có `recursion_limit`.
 - Có checkpointer và `thread_id`, là nền cho resume/HITL.
 - Có metadata để trace theo tenant/workflow.
+
+Model mặc định được đối chiếu ngày 2026-06-08 và chỉ là điểm bắt đầu. Production
+phải pin model qua config, eval tool-selection/final-answer theo từng model và
+không tự động đổi model chỉ vì có bản mới.
 
 ## 5. Router Agent
 
@@ -281,6 +286,8 @@ Human-in-the-loop bắt buộc với action có side effect hoặc rủi ro cao:
 
 LangGraph hỗ trợ pause bằng `interrupt`. Graph cần checkpointer để lưu state, và client resume bằng `Command(resume=...)` với cùng `thread_id`.
 
+Mental model khi resume: graph không "nhảy tiếp" như một coroutine trong memory. Nó khôi phục state từ checkpointer và có thể chạy lại phần đầu của node có `interrupt`. Vì vậy node chứa `interrupt` không được thực hiện side effect trước khi pause; side effect phải nằm sau approval và có idempotency key.
+
 ```python
 from typing import Literal, TypedDict
 from uuid import uuid4
@@ -359,6 +366,10 @@ Production note: `InMemorySaver` chỉ phù hợp local/dev. Production cần pe
 ## 10. Security Và Tool Permission
 
 Prompt không phải security boundary. Security boundary thật nằm ở code, service, permission và audit.
+
+`ToolNode` giúp dispatch tool call nhưng không tự biến tool thành an toàn. Auth
+context, tenant filter, approval, idempotency, timeout và result minimization vẫn
+phải được implement trong tool/service boundary.
 
 Thiết kế tool permission:
 

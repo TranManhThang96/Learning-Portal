@@ -272,7 +272,136 @@ Các policy thường dùng:
 
 Offset mapping ánh xạ token về vị trí ký tự trong text gốc. Nó hữu ích cho NER, highlight citation, debug chunking. Với Hugging Face, `return_offsets_mapping` chỉ hoạt động với fast tokenizer.
 
-## 8. Token limit, latency và cost
+## 8. Dùng Hugging Face tokenizer từng bước
+
+Phần này minh họa API hiện hành đã đối chiếu qua Context7. Cài dependency trong môi trường ảo:
+
+```bash
+python3 -m pip install transformers tokenizers sentencepiece
+```
+
+### Step 1: load đúng tokenizer của model
+
+```python
+from transformers import AutoTokenizer
+
+model_id = "bert-base-multilingual-cased"
+revision = "main"  # Demo only; production thay bằng commit SHA.
+tokenizer = AutoTokenizer.from_pretrained(
+    model_id,
+    revision=revision,
+    use_fast=True,
+)
+```
+
+`AutoTokenizer` đọc config trong model repository và chọn tokenizer class tương ứng. Trong production:
+
+- Pin model/tokenizer revision bằng commit SHA bất biến.
+- Cache hoặc mirror artifact theo policy của công ty.
+- Không thay tokenizer chỉ vì tokenizer khác tạo ít token hơn; weights đã học theo vocabulary cũ.
+
+### Step 2: quan sát token trước khi tạo batch
+
+```python
+text = "Khách hàng báo lỗi thanh toán PAY_403."
+tokens = tokenizer.tokenize(text)
+token_ids = tokenizer.encode(text, add_special_tokens=True)
+
+print(tokens)
+print(token_ids)
+print(tokenizer.convert_ids_to_tokens(token_ids))
+```
+
+Đây là bước debug. Training/inference thực tế nên gọi tokenizer trên batch thay vì lặp từng text bằng Python.
+
+### Step 3: tạo batch tensors
+
+```python
+texts = [
+    "Sản phẩm tốt.",
+    "Khách hàng muốn hoàn tiền vì đơn giao chậm.",
+]
+
+encoded = tokenizer(
+    texts,
+    padding="longest",
+    truncation=True,
+    max_length=128,
+    return_attention_mask=True,
+    return_tensors="pt",
+)
+
+print(encoded["input_ids"].shape)
+print(encoded["attention_mask"].shape)
+```
+
+Ý nghĩa tham số:
+
+| Tham số | Behavior | Trade-off |
+|---|---|---|
+| `padding="longest"` | Pad đến câu dài nhất trong batch | Ít waste hơn, shape thay đổi |
+| `padding="max_length"` | Pad cố định đến `max_length` | Shape ổn định, có thể waste nhiều |
+| `truncation=True` | Cắt sequence vượt giới hạn | Có nguy cơ mất dữ liệu âm thầm |
+| `max_length=128` | Budget token của batch | Phải chọn từ phân phối dữ liệu thật |
+| `return_tensors="pt"` | Trả PyTorch tensors | Sẵn sàng đưa vào model |
+
+`pad_to_multiple_of=8` có thể giúp một số GPU/Tensor Core workload khi padding đã bật, nhưng phải benchmark; nó cũng tạo thêm PAD.
+
+### Step 4: offset mapping cho NER/citation
+
+```python
+encoded = tokenizer(
+    "Tôi cần hoàn tiền.",
+    return_offsets_mapping=True,
+    add_special_tokens=True,
+)
+
+for token_id, (start, end) in zip(
+    encoded["input_ids"],
+    encoded["offset_mapping"],
+):
+    print(tokenizer.convert_ids_to_tokens(token_id), start, end)
+```
+
+`return_offsets_mapping` chỉ có ở fast tokenizer. Special token thường có offset `(0, 0)`, nên code highlight phải bỏ qua chúng.
+
+### Step 5: không silent truncation
+
+Đếm length chưa truncate trước, sau đó mới áp policy:
+
+```python
+raw = tokenizer(
+    texts,
+    padding=False,
+    truncation=False,
+    add_special_tokens=True,
+)
+lengths = [len(ids) for ids in raw["input_ids"]]
+
+too_long = [length for length in lengths if length > max_length]
+if too_long:
+    raise ValueError(
+        f"{len(too_long)} inputs exceed max_length={max_length}; "
+        f"max_seen={max(too_long)}"
+    )
+```
+
+Nếu business cho phép truncate, log count/rate và loại policy đã dùng. Với pair input, chọn rõ `"longest_first"`, `"only_first"` hoặc `"only_second"` thay vì dựa vào default mà team không hiểu.
+
+### Step 6: production wrapper cần contract gì?
+
+Wrapper ở [document.md](./document.md) là reference đầy đủ. Dù triển khai cách nào, contract cần có:
+
+- Model/tokenizer ID và immutable revision.
+- Normalization version.
+- `max_length`, padding và truncation policy.
+- Batch input validation.
+- Token length stats trước truncation.
+- Stable output gồm `input_ids`, `attention_mask` và optional offsets.
+- Metric latency, p50/p95/p99 token length, rejection/truncation count.
+- Test golden samples tiếng Việt có dấu, không dấu, code-mixed và mã lỗi.
+
+## 9. Token limit, latency và cost
 
 Token budget trong một LLM request:
 
@@ -315,7 +444,7 @@ Production metrics nên log:
 
 Không log raw text nếu có PII hoặc dữ liệu khách hàng nhạy cảm.
 
-## 9. Tiếng Việt bị tokenize như thế nào?
+## 10. Tiếng Việt bị tokenize như thế nào?
 
 Tiếng Việt có vài điểm khác English:
 
@@ -369,7 +498,7 @@ Best practice:
 - Benchmark câu có dấu, không dấu, code-mixed, markdown, bảng, JSON, log line.
 - Với RAG, chunk theo token và validate retrieval quality, không chunk cứng theo số ký tự.
 
-## 10. Best solution theo context
+## 11. Best solution theo context
 
 | Context | Khuyến nghị | Lý do |
 |---|---|---|
@@ -380,7 +509,7 @@ Best practice:
 | NER/highlight citation | Dùng fast tokenizer và offset mapping | Cần map token về text gốc |
 | High-QPS service | Batch tokenization, dynamic padding, cache tokenized static docs | Giảm CPU và waste compute |
 
-## 11. Dùng được trong production không?
+## 12. Dùng được trong production không?
 
 Có, tokenizer và preprocessing pipeline dùng được trong production, nhưng cần các điều kiện sau:
 
@@ -402,11 +531,11 @@ Không nên đưa vào production nếu:
 - Chưa test tiếng Việt thật.
 - Không có giới hạn cost/request.
 
-## 12. Thứ tự học và thực hành
+## 13. Thứ tự học và thực hành
 
 1. Đọc lại mental model `raw text -> token ids -> embedding`.
 2. Đọc bảng BPE/WordPiece/SentencePiece và tự giải thích bằng lời của mình.
-3. Chạy code trong `document.md` với 3 tokenizer: `bert-base-multilingual-cased`, `gpt2`, `vinai/phobert-base`.
+3. Chạy API walkthrough trong bài với 3 tokenizer: `bert-base-multilingual-cased`, `gpt2`, `vinai/phobert-base`; dùng wrapper trong `document.md` khi cần reference hoàn chỉnh.
 4. Làm bài tập token stats trong `exercise.md`.
 5. Ghi lại quyết định tokenizer/preprocessing để dùng lại ở Day 16.
 
@@ -418,3 +547,11 @@ Không nên đưa vào production nếu:
 - Attention mask khác gì token type ids?
 - Vì sao `return_offsets_mapping` quan trọng cho NER/citation?
 - Nếu p95 input tokens vượt `max_length`, bạn sẽ sửa dữ liệu, model, chunking hay policy?
+
+## Nguồn kỹ thuật đã đối chiếu
+
+- Transformers docs qua Context7: `/websites/huggingface_co_transformers_main`.
+- Tokenizers source/library qua Context7: `/huggingface/tokenizers`.
+- [Hugging Face padding và truncation](https://huggingface.co/docs/transformers/main/en/pad_truncation).
+- [Hugging Face tokenizer API](https://huggingface.co/docs/transformers/main/en/main_classes/tokenizer).
+- Các behavior quan trọng đã kiểm tra: batch tokenization, padding/truncation strategies, `return_tensors`, `return_attention_mask`, `return_offsets_mapping` chỉ cho fast tokenizer và `pad_to_multiple_of`.

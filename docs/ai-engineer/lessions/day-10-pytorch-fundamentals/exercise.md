@@ -87,20 +87,20 @@ import random
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 
 
 @dataclass(frozen=True)
 class TrainConfig:
     seed: int = 42
-    repeats: int = 512
+    train_repeats: int = 512
+    val_repeats: int = 128
     noise_std: float = 0.04
     hidden_dim: int = 8
     batch_size: int = 32
     epochs: int = 250
     learning_rate: float = 0.03
     weight_decay: float = 1e-4
-    val_ratio: float = 0.2
     checkpoint_path: str = "artifacts/xor_mlp.pt"
 
 
@@ -259,20 +259,15 @@ def predict_clean_xor(model: nn.Module, device: torch.device) -> tuple[torch.Ten
 
 
 def make_loaders(config: TrainConfig, device: torch.device) -> tuple[DataLoader, DataLoader]:
-    dataset = XORDataset(
-        repeats=config.repeats,
+    train_dataset = XORDataset(
+        repeats=config.train_repeats,
         noise_std=config.noise_std,
         seed=config.seed,
     )
-
-    val_size = int(len(dataset) * config.val_ratio)
-    train_size = len(dataset) - val_size
-
-    split_generator = torch.Generator().manual_seed(config.seed)
-    train_dataset, val_dataset = random_split(
-        dataset,
-        [train_size, val_size],
-        generator=split_generator,
+    val_dataset = XORDataset(
+        repeats=config.val_repeats,
+        noise_std=config.noise_std,
+        seed=config.seed + 1,
     )
 
     pin_memory = device.type == "cuda"
@@ -389,6 +384,8 @@ Kỳ vọng:
 - Validation accuracy thường đạt gần `1.0`.
 - Clean XOR predictions là `[[0], [1], [1], [0]]`.
 - Checkpoint nằm ở `artifacts/xor_mlp.pt`.
+
+Train và validation được sinh bằng hai random seed khác nhau để noise không bị dùng lại. Tuy vậy, XOR vẫn là dataset tổng hợp rất nhỏ; validation accuracy ở đây chỉ kiểm tra training loop, không phải bằng chứng model generalize cho bài toán production.
 
 Nếu model không học:
 

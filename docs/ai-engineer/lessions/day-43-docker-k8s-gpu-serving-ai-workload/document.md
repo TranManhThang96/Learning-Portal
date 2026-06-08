@@ -349,11 +349,17 @@ spec:
             limits:
               cpu: "2"
               memory: "4Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
@@ -361,7 +367,6 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
@@ -498,6 +503,8 @@ metadata:
     app: model-server
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: model-server
@@ -534,11 +541,17 @@ spec:
               cpu: "8"
               memory: "24Gi"
               nvidia.com/gpu: 1
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 120
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 20
@@ -546,7 +559,6 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 180
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
@@ -604,22 +616,26 @@ containerd --version
 kubectl get nodes
 ```
 
-Ví dụ cài plugin:
+Xem version chart hiện có rồi pin một version đã review:
 
 ```bash
 helm repo add nvdp https://nvidia.github.io/k8s-device-plugin
 helm repo update
+helm search repo nvdp/nvidia-device-plugin --versions | head
+
+export NVDP_CHART_VERSION="<pin-reviewed-version>"
 helm upgrade -i nvdp nvdp/nvidia-device-plugin \
   --namespace nvidia-device-plugin \
   --create-namespace \
-  --version 0.17.1
+  --version "${NVDP_CHART_VERSION}"
 ```
 
 Kiểm chứng:
 
 ```bash
 kubectl get pods -n nvidia-device-plugin
-kubectl describe node <gpu-node> | grep -A5 "nvidia.com/gpu"
+GPU_NODE="${GPU_NODE:-gpu-node-1}"
+kubectl describe node "${GPU_NODE}" | grep -A5 "nvidia.com/gpu"
 ```
 
 Nếu GPU node có taint riêng, đảm bảo DaemonSet của device plugin có toleration tương ứng. Nếu không, plugin không chạy trên GPU node và Kubernetes sẽ không thấy `nvidia.com/gpu`.
@@ -874,7 +890,9 @@ Kubernetes:
 - [ ] ConfigMap and Secret are separated.
 - [ ] Requests/limits are set.
 - [ ] Readiness/liveness probes are meaningful.
-- [ ] RollingUpdate strategy is configured.
+- [ ] Slow-starting model có `startupProbe`; không dựa vào `initialDelaySeconds` đoán mò.
+- [ ] Rollout strategy được chọn rõ (`RollingUpdate` hoặc `Recreate`) theo availability và capacity.
+- [ ] GPU rollout strategy khớp capacity: `Recreate` cho một GPU không dư, hoặc rolling update khi có GPU dự phòng.
 - [ ] Termination grace period handles streaming requests.
 - [ ] Service is ClusterIP behind ingress/gateway.
 - [ ] PDB/HPA are considered where appropriate.
@@ -925,6 +943,7 @@ Data:
 - Kubernetes GPU scheduling: https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
 - Kubernetes node selection: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
 - Kubernetes taints/tolerations: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+- Kubernetes startup/liveness/readiness probes: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 - NVIDIA Kubernetes device plugin: https://github.com/NVIDIA/k8s-device-plugin
 - KServe overview: https://kserve.github.io/kserve/
 - Ray Serve overview: https://docs.ray.io/en/latest/serve/

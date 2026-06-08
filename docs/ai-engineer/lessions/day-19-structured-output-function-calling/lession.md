@@ -197,6 +197,62 @@ User request
   -> App trả result về LLM hoặc client
 ```
 
+Với OpenAI Responses API hiện hành, tool definition là JSON Schema, còn tool result phải quay lại đúng `call_id`. Một response có thể có 0, 1 hoặc nhiều function calls, vì vậy không được chỉ đọc phần tử đầu:
+
+```python
+import json
+import os
+
+from openai import OpenAI
+
+client = OpenAI()
+tools = [
+    {
+        "type": "function",
+        "name": "lookup_order",
+        "description": "Đọc trạng thái một order mà user hiện tại được phép xem.",
+        "parameters": {
+            "type": "object",
+            "properties": {"order_id": {"type": "string", "minLength": 3}},
+            "required": ["order_id"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    }
+]
+
+first = client.responses.create(
+    model=os.environ["OPENAI_MODEL"],
+    input="Kiểm tra trạng thái ORDER-123",
+    tools=tools,
+)
+
+tool_outputs = []
+for item in first.output:
+    if item.type != "function_call":
+        continue
+    arguments = json.loads(item.arguments)
+    # validate schema + auth + tenant ownership trước khi execute
+    result = {"order_id": arguments["order_id"], "status": "delivered"}
+    tool_outputs.append(
+        {
+            "type": "function_call_output",
+            "call_id": item.call_id,
+            "output": json.dumps(result),
+        }
+    )
+
+if tool_outputs:
+    final = client.responses.create(
+        model=os.environ["OPENAI_MODEL"],
+        previous_response_id=first.id,
+        input=tool_outputs,
+        tools=tools,
+    )
+```
+
+Nếu lần gọi tiếp theo lại trả tool call, application tiếp tục loop trong giới hạn `max_tool_rounds`. Không được loop vô hạn.
+
 Điều cần nhớ:
 
 - Model không được có quyền trực tiếp gọi database, shell, payment, email hoặc file system.
@@ -359,6 +415,8 @@ curl -s -X POST http://localhost:8019/tool/execute \
 
 Chạy lại request thứ hai với cùng `X-Request-Id`; response phải có `idempotent_replay=true`.
 
+`idempotency_store`, user scopes và audit list trong script đều là in-memory để học flow. Chúng không dùng chung giữa nhiều worker/process, mất khi restart và không có transaction. Production cần datastore bền vững có unique constraint/transaction, auth thật và audit sink append-only.
+
 ## Trade-offs Tổng Hợp
 
 | Lựa chọn | Nên dùng khi | Không nên dùng khi | Production note |
@@ -388,7 +446,10 @@ Chạy lại request thứ hai với cùng `X-Request-Id`; response phải có `
 
 ## Tài Liệu Tham Khảo
 
-- Pydantic v2 docs: `BaseModel.model_validate_json`, `Field`, `model_json_schema`.
-- FastAPI docs: `response_model`, `Header`, `HTTPException`.
-- JSON Schema official docs.
-- OWASP Top 10 for LLM Applications.
+- Context7 `/websites/developers_openai_api`: Responses API structured outputs và function calling.
+- Context7 `/fastapi/fastapi`: Pydantic request/response validation, `Header`, `HTTPException`.
+- OpenAI Function Calling: <https://developers.openai.com/api/docs/guides/function-calling>
+- OpenAI Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
+- Pydantic v2: <https://docs.pydantic.dev/latest/>
+- JSON Schema: <https://json-schema.org/>
+- OWASP Top 10 for LLM Applications: <https://genai.owasp.org/llm-top-10/>

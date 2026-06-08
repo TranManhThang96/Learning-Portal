@@ -290,7 +290,7 @@ Nguyên tắc thiết kế:
 4. Log `cached_prompt_tokens` hoặc field tương đương của provider.
 5. Không trộn dữ liệu permission-sensitive vào cache key dùng chung.
 
-Với provider như OpenAI, prompt caching có thể tự động áp dụng cho prompt đủ dài, usage trả về số cached tokens, và có tham số kiểu `prompt_cache_key`/retention tùy model. Chi tiết này thay đổi theo provider, nên production code không nên hardcode giả định; hãy log usage thực tế và đưa pricing vào config.
+Tại lần review ngày 2026-06-08, tài liệu OpenAI mô tả prompt caching tự động cho prompt đủ điều kiện, khuyến nghị đặt prefix ổn định ở đầu, dùng `prompt_cache_key` nhất quán và đọc `usage.prompt_tokens_details.cached_tokens`. `prompt_cache_retention` phụ thuộc model và data-retention policy; với một số model mới chỉ hỗ trợ `24h`, còn default có thể khác giữa project có và không có Zero Data Retention. Đây là ví dụ provider-specific có ngày kiểm chứng, không phải contract chung cho mọi model. Production phải log response usage thực tế, pin model và kiểm tra docs/data policy tại thời điểm release.
 
 Risk:
 
@@ -554,7 +554,7 @@ Offline path
   -> result audit table
 ```
 
-Nhiều provider có Batch API với pricing/rate-limit khác sync API. Ví dụ tài liệu OpenAI hiện mô tả batch là async, thường có discount và completion window rõ. Tuy nhiên, thông số cụ thể là provider-specific; course code nên đọc từ `pricing_config` và feature flags.
+Nhiều provider có Batch API với pricing/rate-limit khác sync API. Tại lần review ngày 2026-06-08, OpenAI Batch API công bố giảm 50% so với synchronous API và completion window tối đa 24 giờ; đây vẫn là thông số provider-specific có thể đổi. Course code phải đọc multiplier/window từ `pricing_config` và feature flags, không rải hằng số vào business logic.
 
 ## 12. Distillation overview
 
@@ -682,6 +682,7 @@ Best default cho RAG Day 40:
 Điều kiện tối thiểu:
 
 - Mọi LLM/embedding/rerank call đều log token usage, model, pricing version và trace id.
+- Nếu có retry, usage phải cộng dồn mọi attempt hoặc lưu từng attempt; không được chỉ tính attempt cuối.
 - Có dashboard cost theo tenant, feature, endpoint, model và prompt version.
 - Token budget được enforce ở backend.
 - Cache key có tenant, ACL/permission hash, corpus version, prompt version và schema version.

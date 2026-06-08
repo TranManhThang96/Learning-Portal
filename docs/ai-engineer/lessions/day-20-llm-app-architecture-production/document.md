@@ -187,6 +187,7 @@ sha256(
   + schema_version
   + model_id
   + task
+  + decoding_config
   + normalized_input
 )
 ```
@@ -199,11 +200,18 @@ sha256(user_message)
 
 Vì key đó có thể leak giữa tenant, sai prompt version, sai model hoặc sai permission.
 
+Nếu primary lỗi và fallback trả kết quả:
+
+- Cách an toàn cho lab: không cache fallback response.
+- Cách nâng cao: cache theo logical route/version và chấp nhận rằng cached result có thể đến từ fallback.
+- Không lưu fallback response dưới physical key của primary mà không ghi provenance, vì điều đó che mất provider/model thực sự tạo output.
+
 ## 7. Audit Event Schema
 
 ```json
 {
   "event_type": "llm_request_completed",
+  "timestamp": "2026-05-10T09:30:00Z",
   "trace_id": "uuid",
   "tenant_id": "tenant_pro",
   "user_id_hash": "sha256-prefix",
@@ -275,3 +283,13 @@ Nếu dùng OpenTelemetry, nên tạo span riêng cho `prompt.build`, `cache.loo
 - Chưa đủ checklist production readiness, cost controls, tenant quota và observability metrics.
 - Chưa có exercise step-by-step để người học tự kiểm chứng retry, timeout, fallback, cache hit, audit log và quota.
 - Chưa trả lời đủ rõ điều kiện "dùng được trong production không".
+
+## 12. Nguồn Kỹ Thuật Đã Xác Minh
+
+- Context7 `/fastapi/fastapi`: Pydantic request/response models, `HTTPException`, async endpoint và application patterns.
+- Context7 `/websites/developers_openai_api`: Responses API, structured outputs, tool calling và current response metadata.
+- FastAPI docs: <https://fastapi.tiangolo.com/>
+- OpenAI Responses API: <https://developers.openai.com/api/reference/responses/overview>
+- OpenAI Function Calling: <https://developers.openai.com/api/docs/guides/function-calling>
+
+Provider adapters cần pin SDK version và có contract tests. Provider-specific timeout/error/usage fields không được rò lên business layer.

@@ -429,10 +429,12 @@ import uuid
 from typing import Literal
 
 from openai import OpenAI, APITimeoutError, RateLimitError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class TicketTriage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category: Literal["billing", "bug", "howto", "account", "other"]
     priority: Literal["low", "medium", "high", "urgent"]
     needs_human: bool
@@ -479,16 +481,18 @@ class TriageService:
                             "strict": True,
                         }
                     },
+                    max_output_tokens=1200,
+                    store=False,
                     metadata={
                         "trace_id": trace_id,
-                        "tenant_id": tenant_id,
-                        "user_id": user_id,
                         "prompt_id": "support_triage",
                         "prompt_version": "v1",
                         "schema_version": "ticket_triage.v1",
                     },
                 )
 
+                if response.status != "completed" or not response.output_text:
+                    raise RuntimeError("model response was incomplete, empty, or refused")
                 raw_json = response.output_text
                 result = TicketTriage.model_validate_json(raw_json)
                 self._log_success(trace_id, started, attempt, response)
@@ -501,6 +505,9 @@ class TriageService:
             except (ValidationError, json.JSONDecodeError) as exc:
                 # Schema/validation error is usually not fixed by blind retry forever.
                 self._log_validation_error(trace_id, started, exc)
+                raise
+            except RuntimeError as exc:
+                self._log_failure(trace_id, started, exc)
                 raise
 
         self._log_failure(trace_id, started, last_error)
@@ -552,7 +559,7 @@ class TriageService:
 
 
 if __name__ == "__main__":
-    service = TriageService(model=os.environ.get("MODEL", "gpt-4.1-mini"))
+    service = TriageService(model=os.environ.get("MODEL", "gpt-5.5"))
     result = service.triage(
         ticket="Khách bị tính phí hai lần sau khi nâng cấp gói enterprise và yêu cầu hoàn tiền ngay.",
         tenant_id="tenant_demo",
@@ -565,7 +572,13 @@ if __name__ == "__main__":
 
 - SDK retry bị tắt bằng `max_retries=0` để app kiểm soát retry. Trong thực tế bạn có thể dùng retry của SDK, nhưng phải tránh retry chồng retry.
 - `TicketTriage` là contract nội bộ, không tin output raw.
+- `extra="forbid"` làm Pydantic schema và app validation từ chối field lạ.
+- `store=False` tránh lưu response ở provider theo mặc định cho flow có ticket/PII;
+  production vẫn phải review data retention theo hợp đồng và compliance.
+- Metadata gửi provider chỉ có technical identifiers; mapping tenant/user nên giữ ở
+  observability nội bộ thay vì gửi raw identity.
 - Metadata có `prompt_version` và `schema_version`.
+- Response rỗng, incomplete hoặc refusal phải đi vào error/fallback path, không parse như JSON thường.
 - Validation error không retry vô hạn.
 - Log ví dụ dùng `print` cho dễ học; production nên dùng structured logger/OpenTelemetry.
 
@@ -583,10 +596,12 @@ from typing import Literal
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class TicketTriage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category: Literal["billing", "bug", "howto", "account", "other"]
     priority: Literal["low", "medium", "high", "urgent"]
     needs_human: bool
@@ -614,10 +629,9 @@ class LangChainTriageService:
     def __init__(self, model: str) -> None:
         llm = ChatOpenAI(
             model=model,
-            temperature=0,
             timeout=20,
             max_retries=0,
-        ).with_structured_output(TicketTriage)
+        ).with_structured_output(TicketTriage, method="json_schema")
         self.chain = PROMPT | llm
         self.model = model
 
@@ -673,7 +687,7 @@ class LangChainTriageService:
 
 
 if __name__ == "__main__":
-    service = LangChainTriageService(model=os.environ.get("MODEL", "gpt-4.1-mini"))
+    service = LangChainTriageService(model=os.environ.get("MODEL", "gpt-5.5"))
     result = service.triage(
         ticket="Khách báo không đăng nhập được sau khi bật SSO cho toàn bộ công ty.",
         tenant_id="tenant_demo",
@@ -685,10 +699,16 @@ if __name__ == "__main__":
 Điểm đáng chú ý:
 
 - LCEL làm flow ngắn và dễ đọc hơn.
-- `with_structured_output(TicketTriage)` giảm code schema thủ công.
+- `with_structured_output(TicketTriage, method="json_schema")` dùng native structured output của OpenAI thay vì để LangChain mặc định sang function/tool calling. Nếu đổi provider không hỗ trợ JSON Schema native, bạn cần test lại strategy structured output thay vì giả định hành vi giống nhau.
 - `config.metadata` giúp tracing, nhưng bạn vẫn phải quyết định log gì, redaction ra sao.
 - Timeout/retry vẫn cần explicit.
+
+Lưu ý chống schema drift: Raw SDK example phía trên generate `TRIAGE_SCHEMA` từ `TicketTriage.model_json_schema()`, không viết JSON Schema thủ công. Với OpenAI Python SDK, bạn cũng có thể dùng helper parse bằng Pydantic model khi phù hợp. Best practice là chỉ có một source of truth cho schema, nếu không type trong code và schema gửi lên model sẽ lệch nhau sau vài lần sửa.
 - Chain được giấu sau service class, giúp thay Raw SDK/LangChain dễ hơn về sau.
+
+Model mặc định trong ví dụ được đối chiếu ngày 2026-06-08. Trong project thật,
+model phải là config đã qua eval, không tự động đổi theo model "mới nhất". Khi đổi
+model/provider, chạy lại golden set, schema/refusal tests, latency và cost benchmark.
 
 ## 13. So Sánh Raw SDK Và LangChain Cho Ticket Triage
 

@@ -145,6 +145,28 @@ Nên dùng khi: production là chat assistant, cần system instruction, cần m
 
 Best solution cho đa số production chat assistant: lưu canonical dataset ở messages format, sau đó viết converter sang Alpaca/ShareGPT nếu trainer yêu cầu.
 
+### 3.5. Messages chưa phải token: chat template là một phần contract
+
+`messages` là dữ liệu có cấu trúc. Trước khi model học, tokenizer còn phải render nó thành chuỗi token theo chat template của đúng model:
+
+```text
+messages JSON
+  -> tokenizer.apply_chat_template(...)
+  -> special tokens + role markers
+  -> token ids
+  -> loss mask
+```
+
+Hai model có cùng input `messages` nhưng chat template khác nhau có thể tạo token sequence khác nhau. Vì vậy:
+
+- Không tự ghép chuỗi kiểu `"User: ... Assistant: ..."` nếu model card yêu cầu template khác.
+- Pin cả tokenizer revision và chat template cùng base model.
+- Inspect ít nhất 3 record sau khi render để chắc role marker, BOS/EOS và generation prompt đúng.
+- Nếu chỉ muốn tính loss trên assistant/completion, phải xác minh trainer và chat template tạo loss mask đúng. Không bật một flag rồi mặc định rằng user/system token đã được mask.
+- Training và inference phải dùng cùng chat template; lệch template là một dạng train-serving skew.
+
+Day 27 sẽ dùng conversational prompt-completion để loss nằm ở phần assistant một cách rõ ràng hơn.
+
 ## 4. Schema nên dùng
 
 Một record production-friendly nên có cả payload training và metadata audit.
@@ -378,6 +400,7 @@ Nếu thiếu các điều kiện này, dataset vẫn có thể dùng cho lab ho
 - [ ] Dedup trước split.
 - [ ] Split train/validation/test không leakage rõ ràng.
 - [ ] Có dataset card và metadata.
+- [ ] Pin tokenizer/chat template và inspect dữ liệu sau render.
 - [ ] Có 20-50 golden examples cho Day 28.
 - [ ] Có câu trả lời production readiness rõ ràng.
 

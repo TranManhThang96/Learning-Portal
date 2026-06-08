@@ -2,69 +2,469 @@
 
 ## Mục Tiêu
 
-Sau bài này, bạn cần làm được các việc sau:
+Sau bài này, bạn cần làm được:
 
-- Tạo và debug `Tensor` bằng `shape`, `dtype`, `device`, `requires_grad`.
-- Hiểu autograd ở mức đủ để viết training loop đúng: `forward -> loss -> backward -> optimizer.step`.
-- Viết model bằng `nn.Module`, đặt computation trong `forward()` và dùng `state_dict` để lưu artifact.
-- Tạo `Dataset` và `DataLoader` cho mini-batch training.
-- Quản lý CPU/GPU device một cách nhất quán cho model, input, label và checkpoint.
-- Rebuild MLP XOR của Day 9 bằng PyTorch, dùng `BCEWithLogitsLoss` thay vì tự viết backprop bằng NumPy.
-- Biết khi nào PyTorch phù hợp production và cần thêm điều kiện gì.
+1. Tạo và debug `Tensor` bằng `shape`, `dtype`, `device`, `requires_grad`.
+2. Hiểu autograd đủ để viết đúng chuỗi `forward -> loss -> backward -> optimizer.step`.
+3. Viết model bằng `nn.Module`, đặt computation trong `forward()` và gọi model bằng `model(x)`.
+4. Tạo `Dataset` và `DataLoader` cho mini-batch training.
+5. Quản lý CPU/CUDA/MPS nhất quán cho model, input, label và checkpoint.
+6. Rebuild MLP XOR của Day 9 bằng PyTorch với `BCEWithLogitsLoss`.
+7. Lưu/load `state_dict` an toàn và nêu được các phần còn thiếu trước production.
 
 ## Cách Học Bài Này
 
-1. Đọc [document.md](./document.md) để nắm mental model, API và trade-off.
-2. Làm lần lượt [exercise.md](./exercise.md), đặc biệt bài rebuild MLP XOR.
-3. So sánh code PyTorch với MLP NumPy ở Day 9: phần nào được framework xử lý, phần nào vẫn là trách nhiệm của engineer.
-4. Tự trả lời checklist cuối bài trước khi sang Day 11.
+| Thời lượng | Việc cần làm | Output |
+|---:|---|---|
+| 25 phút | Tensor, shape, dtype, device | Debug được contract của một batch |
+| 30 phút | Autograd, `nn.Module`, train/eval mode | Giải thích được gradient flow |
+| 25 phút | `Dataset`, `DataLoader`, device loop | Tạo được mini-batch đúng dtype/device |
+| 55 phút | Làm [exercise.md](./exercise.md) | Train và load lại MLP XOR |
+| 15 phút | So sánh Day 9, quiz và production checklist | Biết framework làm gì và engineer vẫn phải làm gì |
 
-## Bức Tranh Tổng Quan
+## TL;DR
 
-PyTorch thay thế phần khó nhất của Day 9: bạn không còn tự tính đạo hàm và tự cập nhật từng weight bằng NumPy. Thay vào đó:
+PyTorch giữ nguyên mental model Day 9 nhưng tự động hóa đạo hàm và cung cấp abstraction chuẩn:
 
 ```text
-Tensor + autograd  -> tự track phép toán và tính gradient
-nn.Module          -> đóng gói architecture và parameters
-Dataset/DataLoader -> đóng gói data access và mini-batch
-Optimizer          -> cập nhật parameters từ gradient
-state_dict         -> artifact có thể lưu, load, deploy
+Tensor + autograd  -> lưu graph và tính gradient
+nn.Module          -> đóng gói architecture/parameters
+Dataset/DataLoader -> đọc dữ liệu và tạo mini-batch
+Optimizer          -> cập nhật parameters
+state_dict         -> lưu weights/buffers theo contract
 ```
 
-Nhưng PyTorch không tự giải quyết mọi vấn đề production. Bạn vẫn phải kiểm soát shape contract, dtype, device, preprocessing, seed, data split, metric, checkpoint, logging, monitoring và rollback.
+Training step tối thiểu:
 
-## Best Solution Theo Context
+```text
+zero gradients -> forward -> loss -> backward -> optimizer step
+```
 
-Với bài Day 10, best solution là dùng PyTorch thuần, không dùng trainer framework. Lý do: mục tiêu là hiểu cơ chế nền tảng trước khi sang optimizer/scheduler ở Day 11 và Hugging Face ở các bài sau.
+Framework không tự giải quyết data leakage, shape sai, metric sai, checkpoint không tin cậy, monitoring hoặc rollback. Những phần đó vẫn là trách nhiệm của engineer.
 
-| Context | Lựa chọn nên dùng | Vì sao |
+## Kết Nối Với Day 9 Và Day 11
+
+```text
+Day 9: tự tính forward/backward bằng NumPy
+  -> Day 10: PyTorch autograd + Module + DataLoader
+  -> Day 11: training loop hoàn chỉnh + optimizer + scheduler + early stopping
+```
+
+## 1. PyTorch Giải Quyết Gì Sau Day 9?
+
+Ở Day 9, bạn tự viết MLP bằng NumPy:
+
+```text
+forward -> tính loss -> tự đạo hàm -> tự update W/b
+```
+
+Cách đó tốt để học, nhưng không phù hợp training deep learning thật vì dễ sai gradient, khó dùng GPU, khó mở rộng architecture và khó lưu/load artifact chuẩn.
+
+PyTorch giữ lại mental model đó nhưng thay phần thủ công bằng các primitive production hơn:
+
+| Day 9 với NumPy | Day 10 với PyTorch | Ý nghĩa |
 |---|---|---|
-| Học backprop ở mức concept | NumPy như Day 9 | Thấy rõ phép toán và gradient |
-| Training deep learning thật | PyTorch | Có autograd, GPU, module, optimizer, ecosystem |
-| Model nhỏ, dev local | CPU fallback | Đơn giản, ít lỗi môi trường |
-| Matrix compute lớn hoặc batch inference | GPU | Tận dụng parallel compute |
-| Binary classification | `BCEWithLogitsLoss` | Ổn định số học hơn `sigmoid + BCELoss` |
-| Inference/evaluation | `model.eval()` + `torch.inference_mode()` | Đúng behavior và giảm memory |
+| `np.ndarray` | `torch.Tensor` | Dữ liệu n chiều, có thể chạy CPU/GPU |
+| Tự viết backprop | Autograd | Tự tính gradient từ computational graph |
+| Tự quản lý `W1`, `b1`, `W2`, `b2` | `nn.Module` và `nn.Parameter` | Đóng gói weights thành model |
+| Tự chia batch | `Dataset` và `DataLoader` | Data pipeline chuẩn |
+| Tự update weight | `torch.optim` | Optimizer chuẩn như SGD, AdamW |
+| Tự save mảng NumPy | `state_dict` | Artifact chuẩn của PyTorch |
 
-## Dùng Được Trong Production Không?
+Best solution trong bài này: viết training loop PyTorch thuần. Chưa dùng abstraction cao hơn vì Senior SE cần hiểu loop nền trước khi debug model thật.
 
-Có, PyTorch dùng được trong production cho cả training và inference. Tuy nhiên code demo trong bài chỉ là baseline học tập. Để dùng production, tối thiểu cần:
+## 2. Tensor, `dtype`, `shape`, `device`
 
-- Artifact rõ ràng: `state_dict`, config architecture, preprocessing config, label mapping, threshold và metric.
-- Reproducibility: seed, package version, dataset snapshot, data split, training config.
-- Validation: kiểm tra `shape`, `dtype`, missing value, range của feature và device mismatch.
-- Runtime mode đúng: training dùng `model.train()`, evaluation/inference dùng `model.eval()` kèm `torch.no_grad()` hoặc `torch.inference_mode()`.
-- Observability: log loss, metric, latency, error rate, prediction distribution, drift.
-- Reliability: device fallback CPU/GPU, xử lý checkpoint lỗi, rollback model version, không load checkpoint từ nguồn không tin cậy.
-- Performance test: benchmark p50/p95/p99 latency, throughput, VRAM/RAM, data loading bottleneck.
+`Tensor` là core data structure của PyTorch. Nó giống NumPy array ở chỗ biểu diễn dữ liệu n chiều, nhưng có thêm:
 
-## Checklist Hoàn Thành
+- `device`: tensor nằm trên CPU, CUDA GPU hoặc backend khác.
+- `requires_grad`: có cần autograd track phép toán không.
+- `.grad`: nơi gradient được accumulate sau `backward()`.
+- Tích hợp với `torch.nn`, optimizer và GPU runtime.
 
-- [ ] Giải thích được `Tensor` khác NumPy array ở điểm nào.
-- [ ] Biết vì sao `loss.backward()` tạo gradient và vì sao gradient bị accumulate.
-- [ ] Biết vì sao cần `optimizer.zero_grad(set_to_none=True)` trước mỗi update.
-- [ ] Viết được `nn.Module` có `__init__` và `forward`.
-- [ ] Tạo được `Dataset`/`DataLoader` trả về batch `(features, labels)`.
-- [ ] Chạy được MLP XOR bằng PyTorch với `BCEWithLogitsLoss`.
-- [ ] Save/load được `state_dict`.
-- [ ] Trả lời được production readiness của code mình viết.
+Ví dụ inspect tensor:
+
+```python
+import torch
+
+x = torch.tensor(
+    [[0.0, 1.0], [1.0, 0.0]],
+    dtype=torch.float32,
+)
+
+print("shape:", x.shape)   # torch.Size([2, 2])
+print("dtype:", x.dtype)   # torch.float32
+print("device:", x.device) # cpu
+print("ndim:", x.ndim)
+print("numel:", x.numel())
+```
+
+### Shape Là Contract
+
+Với binary classifier MLP:
+
+```text
+X      shape = (batch_size, input_dim)
+logits shape = (batch_size, 1)
+y      shape = (batch_size, 1)
+```
+
+Nếu `logits` là `(32, 1)` nhưng label là `(32,)`, một số operation có thể broadcast âm thầm hoặc loss báo lỗi khó đọc. Trong code gần production, hãy validate shape ở boundary: khi tạo dataset, trước khi tính loss, hoặc trong test.
+
+### Dtype Là Contract Tính Toán
+
+Các dtype hay gặp:
+
+| Dtype | Dùng khi | Lưu ý |
+|---|---|---|
+| `torch.float32` | Default cho training neural network | Cân bằng tốc độ, memory, độ chính xác |
+| `torch.float64` | Numerical analysis cần chính xác cao | Chậm hơn, tốn RAM/VRAM hơn |
+| `torch.int64` / `torch.long` | Class index cho `CrossEntropyLoss` | Không dùng cho `BCEWithLogitsLoss` target |
+| `torch.bool` | Mask | Không dùng trực tiếp làm feature numeric |
+| `torch.float16` / `bfloat16` | Mixed precision | Cần hiểu GPU support và stability |
+
+Với `BCEWithLogitsLoss`, input là logits dạng float và target nên là float cùng shape, giá trị 0 hoặc 1.
+
+### Device Là Runtime Placement
+
+Model và tensor input phải nằm cùng device:
+
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+x = x.to(device)
+model = model.to(device)
+```
+
+Lỗi phổ biến:
+
+```text
+Expected all tensors to be on the same device, but found at least two devices...
+```
+
+Nguyên nhân thường là model đã `.to("cuda")` nhưng batch từ `DataLoader` vẫn ở CPU, hoặc checkpoint được load về CPU rồi trộn với tensor GPU.
+
+Best practice:
+
+- Chọn `device` một lần ở đầu program.
+- Move model sang device ngay sau khi khởi tạo.
+- Move từng batch sang device trong training/evaluation loop.
+- Khi cần log hoặc convert sang NumPy, đưa tensor về CPU bằng `.detach().cpu()`.
+
+## 3. Autograd
+
+Autograd build computational graph trong lúc bạn chạy forward pass. Khi gọi `loss.backward()`, PyTorch tính gradient của loss theo các leaf tensor có `requires_grad=True`, thường là parameters của model.
+
+Ví dụ nhỏ:
+
+```python
+import torch
+
+w = torch.tensor([2.0], requires_grad=True)
+x = torch.tensor([3.0])
+y = w * x
+loss = (y - 10.0) ** 2
+
+loss.backward()
+
+print(w.grad)  # dloss/dw
+```
+
+Điều quan trọng: gradient được accumulate. Nếu bạn không reset gradient, batch sau sẽ cộng dồn gradient với batch trước.
+
+Training step chuẩn:
+
+```python
+optimizer.zero_grad(set_to_none=True)
+logits = model(xb)
+loss = loss_fn(logits, yb)
+loss.backward()
+optimizer.step()
+```
+
+Vì sao `set_to_none=True`?
+
+- Giảm một số thao tác ghi zero vào memory.
+- Có thể tiết kiệm memory và nhanh hơn trong nhiều workload.
+- Giúp phát hiện parameter nào không nhận gradient vì `.grad` vẫn là `None`.
+
+Trade-off: nếu code cũ giả định `.grad` luôn là tensor zero, cần sửa logic đó.
+
+### Khi Không Cần Gradient
+
+Evaluation và inference không cần lưu graph:
+
+```python
+model.eval()
+with torch.inference_mode():
+    logits = model(xb)
+    probs = torch.sigmoid(logits)
+```
+
+`torch.no_grad()` và `torch.inference_mode()` đều tắt gradient tracking. `inference_mode()` tối ưu mạnh hơn cho inference thuần, nhưng ít linh hoạt hơn nếu bạn còn cần tensor tham gia autograd sau đó. Trong bài này, evaluation/predict dùng `inference_mode()`. Khi viết code debug cần linh hoạt, `no_grad()` vẫn là lựa chọn an toàn.
+
+`model.eval()` không thay thế `no_grad()` hoặc `inference_mode()`. `eval()` đổi behavior của layer như Dropout/BatchNorm; gradient mode kiểm soát autograd memory.
+
+## 4. `nn.Module` Và `forward()`
+
+`nn.Module` là base class cho model/layer. Subclass thường có:
+
+- `__init__`: khai báo layer, parameter, buffer.
+- `forward`: mô tả computation từ input sang output.
+- `state_dict`: dictionary chứa parameters và buffers.
+
+Ví dụ:
+
+```python
+from torch import nn
+
+
+class XORMLP(nn.Module):
+    def __init__(self, hidden_dim: int = 8) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(2, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        if x.ndim != 2 or x.shape[1] != 2:
+            raise ValueError(f"Expected input shape (batch, 2), got {tuple(x.shape)}")
+        return self.net(x)
+```
+
+Gọi model bằng `model(x)`, không gọi trực tiếp `model.forward(x)` trong training code. `model(x)` đi qua hook và cơ chế nội bộ của `nn.Module`.
+
+### `model.train()` Và `model.eval()`
+
+```python
+model.train()  # training mode
+model.eval()   # evaluation mode
+```
+
+Với MLP XOR không có Dropout/BatchNorm, output có thể giống nhau giữa train/eval. Nhưng trong model thật, quên `eval()` có thể làm metric và inference sai.
+
+Production rule:
+
+- Training loop: gọi `model.train()` đầu epoch.
+- Validation/test/inference: gọi `model.eval()` và tắt gradient.
+- Sau khi load checkpoint để serve: gọi `model.eval()`.
+
+## 5. `Dataset` Và `DataLoader`
+
+`Dataset` mô tả cách lấy một sample. `DataLoader` biến dataset thành iterable mini-batch.
+
+```python
+from torch.utils.data import Dataset, DataLoader
+
+
+class XORDataset(Dataset):
+    def __init__(self):
+        self.features = ...
+        self.labels = ...
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+
+loader = DataLoader(
+    XORDataset(),
+    batch_size=32,
+    shuffle=True,
+    num_workers=0,
+)
+```
+
+Các option quan trọng:
+
+| Option | Ý nghĩa | Trade-off |
+|---|---|---|
+| `batch_size` | Số sample mỗi batch | Lớn hơn thường tăng throughput nhưng tốn memory |
+| `shuffle` | Xáo trộn mỗi epoch | Nên bật cho train, tắt cho validation/test |
+| `num_workers` | Số process load data | Tăng throughput nhưng phức tạp debug hơn |
+| `pin_memory` | Copy tensor vào pinned memory cho CUDA | Có ích khi dùng GPU, không cần cho CPU |
+| `drop_last` | Bỏ batch cuối nếu thiếu sample | Hữu ích cho BatchNorm/distributed training |
+| `collate_fn` | Cách ghép sample thành batch | Cần cho sequence dài ngắn khác nhau |
+
+Best practice:
+
+- Dataset không nên tự move tensor sang GPU. Để training loop quyết định device.
+- Dataset nên trả về tensor có shape/dtype ổn định.
+- `shuffle=True` chỉ dùng cho training set.
+- Với dữ liệu lớn, tách preprocessing offline hoặc cache để `DataLoader` không thành bottleneck.
+
+## 6. CPU/GPU Device Management
+
+Pattern cơ bản:
+
+```python
+def select_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+device = select_device()
+model = XORMLP().to(device)
+
+for xb, yb in loader:
+    xb = xb.to(device)
+    yb = yb.to(device)
+```
+
+GPU không tự động nhanh hơn trong mọi trường hợp. Nếu model rất nhỏ hoặc batch rất nhỏ, cost copy CPU -> GPU có thể lớn hơn lợi ích compute.
+
+Production considerations:
+
+- Log device đang dùng ở startup.
+- Có fallback khi CUDA không available.
+- Tránh `.to(device)` từng sample; move theo batch.
+- Tránh gọi `.item()` quá nhiều trong GPU loop vì có thể ép đồng bộ CPU/GPU.
+- Theo dõi VRAM, GPU utilization, dataloader wait time.
+
+## 7. Training Loop Tối Thiểu Nhưng Đúng
+
+Skeleton cho binary classification:
+
+```python
+from torch import nn
+
+loss_fn = nn.BCEWithLogitsLoss()
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-2, weight_decay=1e-4)
+
+model.train()
+for xb, yb in train_loader:
+    xb = xb.to(device)
+    yb = yb.to(device)
+
+    optimizer.zero_grad(set_to_none=True)
+    logits = model(xb)
+    loss = loss_fn(logits, yb)
+    loss.backward()
+    optimizer.step()
+```
+
+Tại sao không đặt `Sigmoid` trong model khi dùng `BCEWithLogitsLoss`?
+
+- `BCEWithLogitsLoss` nhận raw logits.
+- Nó kết hợp sigmoid và binary cross entropy theo cách ổn định số học hơn.
+- Khi cần probability để metric/inference, dùng `torch.sigmoid(logits)` sau model.
+
+## 8. Save/Load Bằng `state_dict`
+
+Không nên serialize cả object model nếu không cần. Cách chuẩn là lưu `state_dict` kèm config.
+
+```python
+checkpoint = {
+    "model_state_dict": model.state_dict(),
+    "optimizer_state_dict": optimizer.state_dict(),
+    "config": {
+        "input_dim": 2,
+        "hidden_dim": 8,
+        "output_dim": 1,
+    },
+    "metrics": {"val_accuracy": 1.0},
+}
+torch.save(checkpoint, "artifacts/xor_mlp.pt")
+```
+
+Load:
+
+```python
+checkpoint = torch.load(
+    "artifacts/xor_mlp.pt",
+    map_location=device,
+    weights_only=True,
+)
+model = XORMLP(hidden_dim=checkpoint["config"]["hidden_dim"]).to(device)
+model.load_state_dict(checkpoint["model_state_dict"])
+model.eval()
+```
+
+Production note:
+
+- Chỉ load checkpoint từ nguồn tin cậy.
+- Version config, preprocessing và code model cùng artifact.
+- Giữ `weights_only=True` rõ ràng và chỉ load checkpoint từ nguồn tin cậy. Không chuyển sang `weights_only=False` chỉ để bỏ qua lỗi allowlist.
+
+## 9. NumPy Vs PyTorch
+
+| Tiêu chí | NumPy | PyTorch |
+|---|---|---|
+| Core data | `ndarray` | `Tensor` |
+| Autograd | Không có native autograd | Có autograd |
+| GPU | Không phải default workflow | First-class CUDA support |
+| Neural network layers | Tự viết hoặc dùng lib khác | `torch.nn` |
+| Optimizer | Tự viết | `torch.optim` |
+| Data pipeline | Tự viết batching | `Dataset`/`DataLoader` |
+| Production DL | Không phải lựa chọn chính | Rất phổ biến |
+| Học math | Rất tốt | Tốt nhưng che bớt chi tiết gradient |
+
+Best solution:
+
+- Dùng NumPy để học linear algebra, loss, manual gradient.
+- Dùng PyTorch khi training neural network thật, cần GPU, checkpoint, ecosystem và khả năng mở rộng.
+
+## 10. Performance Và Trade-Off
+
+| Quyết định | Lợi ích | Chi phí/rủi ro | Gợi ý |
+|---|---|---|---|
+| CPU | Dễ chạy, ít phụ thuộc | Chậm với model lớn | Tốt cho dev, test, inference nhỏ |
+| GPU | Throughput cao cho matrix compute | VRAM, setup, transfer cost | Dùng khi batch/model đủ lớn |
+| Batch lớn | Tận dụng vectorization | Tốn memory, có thể ảnh hưởng generalization | Tăng dần đến khi gần giới hạn memory |
+| `num_workers > 0` | Load data song song | Debug khó hơn, overhead process | Bắt đầu `0`, tăng khi data loading nghẽn |
+| `float32` | Default ổn định | Tốn hơn mixed precision | Dùng trước khi tối ưu |
+| Mixed precision | Nhanh hơn, ít VRAM hơn | Có rủi ro numerical issue | Để Day sau khi loop đã đúng |
+| `inference_mode()` | Ít overhead hơn inference | Ít linh hoạt hơn `no_grad()` | Dùng cho inference thuần |
+
+Performance rule: đo trước khi tối ưu. Với model nhỏ như XOR, GPU có thể chậm hơn CPU vì overhead dominate.
+
+## 11. Lỗi Phổ Biến
+
+- Quên `optimizer.zero_grad(...)`, làm gradient cộng dồn sai.
+- Dùng `Sigmoid` trong model rồi lại dùng `BCEWithLogitsLoss`.
+- Label dtype là `torch.long` trong bài toán BCE thay vì float.
+- Label shape `(batch,)` nhưng logits shape `(batch, 1)`.
+- Model ở GPU nhưng batch ở CPU.
+- Quên `model.eval()` khi validation/inference.
+- Quên `torch.no_grad()` hoặc `torch.inference_mode()` khi inference, làm tốn memory.
+- Save cả object model thay vì `state_dict`, làm artifact phụ thuộc code path nhiều hơn.
+- Convert tensor GPU trực tiếp sang NumPy thay vì `.detach().cpu().numpy()`.
+
+## 12. Kết Luận Production
+
+PyTorch fundamentals trong bài này dùng được làm nền production. Code demo có thể chạy local và làm template nhỏ, nhưng chưa đủ production nếu thiếu config management, test, logging, checkpoint policy, data validation, model registry, serving layer và monitoring.
+
+Câu trả lời ngắn: dùng được trong production nếu bạn quản lý đầy đủ artifact, reproducibility, input contract, runtime mode, device fallback, performance benchmark và observability. Không nên copy nguyên training script demo vào production service mà không bổ sung các lớp kiểm soát đó.
+
+## 13. Checklist Hoàn Thành
+
+- [ ] Tôi giải thích được Tensor khác NumPy array ở `device` và autograd.
+- [ ] Tôi biết gradient được cộng dồn và reset đúng bằng `optimizer.zero_grad(set_to_none=True)`.
+- [ ] Tôi viết được `nn.Module` có `__init__` và `forward()`.
+- [ ] Tôi gọi `model(x)`, không gọi trực tiếp `model.forward(x)` trong application code.
+- [ ] Tôi tạo được `Dataset`/`DataLoader` trả batch có shape/dtype ổn định.
+- [ ] Tôi train được XOR với `BCEWithLogitsLoss` nhận raw logits.
+- [ ] Tôi dùng `model.eval()` cùng `torch.inference_mode()` cho inference thuần.
+- [ ] Tôi save/load được `state_dict` và chỉ load checkpoint từ nguồn tin cậy.
+- [ ] Tôi giải thích được khi nào GPU nhanh hơn và khi nào overhead làm GPU chậm hơn CPU.
+- [ ] Tôi nêu được các lớp còn thiếu trước production.
+
+## 14. Quiz Nhanh
+
+1. Vì sao `model.eval()` không thay thế `torch.inference_mode()`?
+2. Điều gì xảy ra nếu quên reset gradient trước batch kế tiếp?
+3. Vì sao `BCEWithLogitsLoss` không nhận probability đã qua Sigmoid?
+4. Target của BCE nên có dtype/shape nào?
+5. Vì sao Dataset không nên tự move từng sample lên GPU?
+6. `state_dict` chưa chứa những metadata production nào?
+7. Vì sao checkpoint dùng pickle vẫn phải được xem là input không tin cậy?
+
+## 15. Liên Kết Thực Hành Và Tra Cứu
+
+- Bài tập: [exercise.md](./exercise.md)
+- API cheat sheet và nguồn PyTorch chính thức: [document.md](./document.md)

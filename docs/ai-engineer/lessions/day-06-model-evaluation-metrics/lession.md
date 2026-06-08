@@ -6,7 +6,7 @@ Day 3 đã nói về train/validation/test split và overfitting. Day 4-5 đã �
 
 Kết thúc bài này, bạn cần làm được:
 
-- Giải thích được `accuracy`, `precision`, `recall`, `F1`, `ROC-AUC`, `PR-AUC`/`average precision` và `confusion matrix` bằng ngôn ngữ business.
+- Giải thích được `accuracy`, `precision`, `recall`, `F1`, `ROC-AUC`, Precision-Recall curve, `Average Precision` và `confusion matrix` bằng ngôn ngữ business.
 - Chọn metric đúng cho imbalanced classification, đặc biệt là fraud detection.
 - Hiểu và dùng đúng regression metrics: `MAE`, `MSE`, `RMSE`, `MAPE`.
 - Hiểu ranking metrics: `MRR`, `NDCG`, `Recall@k`, và vì sao chúng quan trọng cho recommendation/search/RAG.
@@ -16,7 +16,7 @@ Kết thúc bài này, bạn cần làm được:
 
 ## TL;DR
 
-Evaluation metric là test suite của ML system, nhưng khác unit test ở chỗ output thường là xác suất và quyết định phụ thuộc business context. Không có "metric tốt nhất" cho mọi bài toán. Accuracy chỉ đáng tin khi class tương đối cân bằng và cost của các loại lỗi gần nhau. Với positive class hiếm như fraud, PR-AUC, recall, precision tại threshold cụ thể và confusion matrix thường quan trọng hơn accuracy.
+Evaluation metric là test suite của ML system, nhưng khác unit test ở chỗ output thường là xác suất và quyết định phụ thuộc business context. Không có "metric tốt nhất" cho mọi bài toán. Accuracy chỉ đáng tin khi class tương đối cân bằng và cost của các loại lỗi gần nhau. Với positive class hiếm như fraud, Average Precision, recall, precision tại threshold cụ thể và confusion matrix thường quan trọng hơn accuracy.
 
 Best default khi đánh giá một model tabular classification:
 
@@ -24,7 +24,7 @@ Best default khi đánh giá một model tabular classification:
 Xác định positive class và action sau prediction
 -> xem class distribution
 -> train baseline đơn giản
--> báo cáo ROC-AUC và PR-AUC trên score
+-> báo cáo ROC-AUC, Precision-Recall curve và Average Precision trên score
 -> sweep threshold
 -> chọn threshold theo cost/capacity/guardrail
 -> kiểm tra confusion matrix theo segment
@@ -158,7 +158,7 @@ F1 hữu ích khi:
 
 F1 không đủ khi cost lệch mạnh. Nếu `FN` fraud tốn 500 USD nhưng `FP` chỉ tốn 5 USD review, chọn threshold theo F1 có thể không tối ưu business.
 
-## 5. ROC-AUC, PR-AUC Và Average Precision
+## 5. ROC-AUC, Precision-Recall Curve Và Average Precision
 
 Nhiều model trả score/probability thay vì label cứng. Khi đó cần metric đánh giá khả năng ranking trước khi chọn threshold.
 
@@ -185,11 +185,17 @@ Nhược điểm:
 - FPR nhỏ nhìn có vẻ tốt, nhưng vì số negative rất lớn nên vẫn có thể tạo rất nhiều false positive.
 - Không nói trực tiếp threshold nào dùng được trong production.
 
-### PR-AUC Và Average Precision
+### Precision-Recall Curve, PR-AUC Và Average Precision
 
-`Precision-Recall curve` vẽ quan hệ giữa precision và recall khi threshold thay đổi. `PR-AUC` tập trung vào positive class. Trong scikit-learn, metric thường dùng là `average_precision_score`, một dạng tóm tắt precision-recall curve.
+`Precision-Recall curve` vẽ quan hệ giữa precision và recall khi threshold thay đổi. Cụm từ `PR-AUC` thường được dùng không chặt chẽ cho một số cách tóm tắt curve. Trong scikit-learn:
 
-PR-AUC hữu ích hơn ROC-AUC khi positive class hiếm:
+- `average_precision_score` tính **Average Precision (AP)** bằng trung bình có trọng số của precision theo mức tăng recall.
+- `auc(recall, precision)` tính diện tích hình thang dưới các điểm trên curve.
+- Hai con số có thể khác nhau; phải ghi rõ report đang dùng cách nào.
+
+Trong khóa học này, code dùng `average_precision_score`, vì vậy report sẽ gọi chính xác là `Average Precision (AP)`.
+
+Precision-Recall curve và AP thường hữu ích hơn ROC-AUC khi positive class hiếm:
 
 - Fraud.
 - Churn rate thấp.
@@ -197,14 +203,14 @@ PR-AUC hữu ích hơn ROC-AUC khi positive class hiếm:
 - Anomaly detection.
 - Phishing/spam hiếm nhưng quan trọng.
 
-Baseline trực giác của PR-AUC gần với positive rate. Nếu fraud rate là 1%, model random có average precision khoảng 0.01. Model đạt PR-AUC 0.25 có thể đã tốt hơn random rất nhiều, dù con số nghe không "cao" như ROC-AUC 0.95.
+Baseline trực giác của AP gần với positive rate. Nếu fraud rate là 1%, model random có AP khoảng 0.01. Model đạt AP 0.25 có thể đã tốt hơn random rất nhiều, dù con số nghe không "cao" như ROC-AUC 0.95.
 
 Rule thực tế:
 
 | Context | Metric nên xem trước | Lý do |
 |---|---|---|
 | Class cân bằng, cost tương đối đều | Accuracy, ROC-AUC, F1 | Aggregate không quá misleading |
-| Positive hiếm | PR-AUC, recall/precision tại threshold | Tập trung vào class cần bắt |
+| Positive hiếm | AP, recall/precision tại threshold | Tập trung vào class cần bắt |
 | Action positive rất đắt | Precision tại threshold, FP count | Tránh báo nhầm quá nhiều |
 | Bỏ sót rất đắt | Recall tại threshold, FN cost | Tránh lọt case nguy hiểm |
 | Có capacity cố định | Alerts per day, precision, cost | Metric phải khớp vận hành |
@@ -325,8 +331,8 @@ Rule chọn ranking metric:
 
 | Use case | ML metric | Business metric |
 |---|---|---|
-| Fraud detection | PR-AUC, recall, precision, FP/FN count | Fraud amount prevented, chargeback rate, legitimate approval rate, analyst workload |
-| Churn prediction | ROC-AUC, PR-AUC, calibration, recall@top% | Retention uplift, campaign ROI, discount cost |
+| Fraud detection | AP, recall, precision, FP/FN count | Fraud amount prevented, chargeback rate, legitimate approval rate, analyst workload |
+| Churn prediction | ROC-AUC, AP, calibration, recall@top% | Retention uplift, campaign ROI, discount cost |
 | Recommendation | NDCG@k, Recall@k, CTR prediction AUC | Conversion, revenue/session, long-term retention |
 | RAG retrieval | Recall@k, MRR, NDCG@k | Answer correctness, support deflection, hallucination rate |
 | Demand forecast | MAE, RMSE, p95 error | Stockout rate, inventory cost, waste |
@@ -413,7 +419,7 @@ Quy trình thực tế nên đi theo thứ tự:
 3. Giữ test set cố định, không tune nhiều lần trên test set.
 4. Train baseline đơn giản trước: dummy classifier, logistic regression, tree baseline.
 5. Báo cáo class distribution và confusion matrix.
-6. Báo cáo score metrics: ROC-AUC, PR-AUC/average precision.
+6. Báo cáo score metrics: ROC-AUC và Average Precision; nếu dùng diện tích hình thang PR-AUC thì ghi rõ cách tính.
 7. Sweep threshold và tính precision, recall, F1, FP, FN, alert volume.
 8. Tính business cost/profit theo assumption rõ ràng.
 9. Kiểm tra metrics theo segment: country, merchant category, channel, device, customer type.
@@ -496,7 +502,7 @@ Nếu thiếu các điều kiện trên, metrics vẫn hữu ích cho học tậ
 
 1. Vì sao model luôn dự đoán class majority có thể có accuracy cao nhưng business value thấp?
 2. Trong fraud detection, `FP` và `FN` gây hậu quả khác nhau thế nào?
-3. Khi nào nên nhìn PR-AUC trước ROC-AUC?
+3. Khi nào nên nhìn Precision-Recall curve và AP trước ROC-AUC?
 4. Vì sao threshold `0.5` không nên là lựa chọn mặc định?
 5. F1 có thể sai hướng khi cost `FP` và `FN` lệch mạnh như thế nào?
 6. Với bài toán delivery time prediction, khi nào chọn MAE và khi nào chọn RMSE?

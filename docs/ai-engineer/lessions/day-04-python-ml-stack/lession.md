@@ -143,6 +143,73 @@ Production concern:
 - Join có thể nhân bản dòng nếu key không unique. Luôn kiểm tra row count trước/sau `merge`.
 - Không hard-code EDA transformation vào notebook rồi quên đưa vào training pipeline.
 
+### 3.1. EDA step-by-step
+
+**Exploratory Data Analysis (EDA)** là quá trình kiểm tra schema, chất lượng và pattern dữ liệu trước khi modeling. Mục tiêu không phải tạo dashboard đẹp mà là tìm assumption sai.
+
+Thứ tự thực dụng:
+
+1. Kiểm tra row/column count, dtype và memory.
+2. Kiểm tra target null, duplicate key và label distribution.
+3. Kiểm tra missing rate, range và cardinality.
+4. Split dev/test theo đúng thời gian/group.
+5. Chỉ dùng dev/train data cho target-aware analysis và quyết định feature/model.
+6. Ghi mỗi phát hiện thành validation rule hoặc hypothesis có thể kiểm tra.
+
+```python
+print(df.shape)
+df.info(memory_usage="deep")
+print(df["survived"].value_counts(dropna=False, normalize=True))
+print(df.isna().mean().sort_values(ascending=False).head(10))
+print(df[["age", "fare"]].describe(percentiles=[0.5, 0.9, 0.99]))
+```
+
+Không nhìn test labels nhiều lần để “hiểu data”, vì mỗi quyết định dựa trên test set làm test set kém độc lập hơn.
+
+### 3.2. Visualization cơ bản với Matplotlib
+
+Visualization giúp thấy skew, outlier, missing và khác biệt theo segment. Mỗi plot phải trả lời một câu hỏi.
+
+```python
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+df["age"].plot.hist(bins=30, ax=axes[0], title="Age distribution")
+(
+    df.groupby("pclass", observed=False)["survived"]
+    .mean()
+    .sort_index()
+    .plot.bar(ax=axes[1], title="Survival rate by class")
+)
+
+axes[0].set_xlabel("Age")
+axes[1].set_ylabel("Survival rate")
+fig.tight_layout()
+plt.show()
+```
+
+Best practices:
+
+- Luôn ghi title, axis label, unit và sample/filter đang dùng.
+- Histogram/binning có thể che pattern; thử nhiều bin hợp lý.
+- Plot average theo group phải kèm count để tránh kết luận từ nhóm quá nhỏ.
+- Không dùng chart trên toàn test set để tune feature/model.
+- Trong batch job/headless CI, lưu figure rồi `plt.close(fig)` thay vì giữ nhiều figure trong memory.
+
+### 3.3. Jupyter workflow không lệ thuộc notebook
+
+Jupyter notebook là môi trường tương tác theo cell. Rủi ro lớn nhất là **hidden state**: output phụ thuộc cell đã chạy trước đó nhưng không thể hiện trong thứ tự file.
+
+Checklist notebook đáng tin:
+
+- Restart kernel và Run All phải thành công.
+- Import, seed và config nằm ở đầu notebook.
+- Không sửa DataFrame toàn cục qua nhiều cell khó truy vết.
+- Mỗi plot/metric ghi rõ dataset split.
+- Logic tái sử dụng chuyển sang function/module `.py`.
+- Notebook chỉ orchestration/analysis; training job production chạy bằng CLI/script.
+
 ## 4. scikit-learn mental model
 
 scikit-learn xoay quanh 3 interface chính:
@@ -204,6 +271,8 @@ preprocessor = ColumnTransformer(
 ```
 
 Vì sao `handle_unknown="ignore"` quan trọng? Production luôn có category mới: một cảng mới, plan mới, campaign mới, country code mới. Nếu encoder fail toàn bộ request vì category mới, service sẽ brittle. `ignore` giúp request vẫn chạy, nhưng bạn cần monitor category drift vì quality có thể giảm.
+
+`OneHotEncoder` mặc định trả sparse matrix. Nhiều linear model xử lý sparse tốt, nhưng estimator khác có thể cần dense input. Với Titanic cardinality thấp, có thể đặt `sparse_output=False` để dùng chung với `HistGradientBoostingClassifier`; không áp dụng lựa chọn này cho high-cardinality data nếu chưa estimate memory.
 
 ## 6. Notebook-to-production workflow
 
@@ -281,7 +350,7 @@ Best solution theo context:
 2. Luôn lưu preprocessing và model trong cùng một `Pipeline`.
 3. Lưu metadata cạnh artifact: feature list, target, metrics, dataset source, package version, random seed.
 4. Validate schema ở cả training và inference. Fail rõ ràng khi thiếu cột hoặc sai kiểu nghiêm trọng.
-5. Log metrics không chỉ accuracy. Với classification, luôn xem precision, recall, F1 và ROC-AUC nếu có probability.
+5. Log metrics không chỉ accuracy. Với classification, luôn xem precision, recall, F1 và ROC-AUC nếu có probability; với positive class hiếm, thêm Average Precision và ghi đúng định nghĩa metric.
 6. Pin dependency version cho artifact quan trọng vì pickle/joblib phụ thuộc Python và package version.
 7. Không dùng notebook làm cron job production; chuyển sang script/package có CLI, config và test.
 
@@ -371,7 +440,7 @@ Làm bài trong [exercise.md](./exercise.md). Output tối thiểu:
 
 ## Tài liệu tham khảo
 
-- NumPy documentation: `ndarray`, broadcasting, matrix multiplication, views vs copies.
-- Pandas documentation: DataFrame selection, boolean indexing, groupby aggregation, `info(memory_usage=...)`.
-- scikit-learn documentation: `Pipeline`, `ColumnTransformer`, `OneHotEncoder`, `fetch_openml`, model persistence.
+- NumPy 2.4 docs qua Context7, `/websites/numpy_doc_2_4`: `ndarray`, broadcasting, matrix multiplication, views/copies.
+- pandas docs qua Context7, `/websites/pandas_pydata`: DataFrame inspection, boolean indexing, groupby, missing data và datetime.
+- scikit-learn stable docs qua Context7, `/websites/scikit-learn_stable`: `Pipeline`, `ColumnTransformer`, `OneHotEncoder`, `fetch_openml`, model persistence.
 - Keywords: `train-serving skew`, `data leakage`, `model artifact metadata`, `categorical drift`.

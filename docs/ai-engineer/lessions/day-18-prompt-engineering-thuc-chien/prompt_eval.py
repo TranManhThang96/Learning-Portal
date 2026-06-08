@@ -77,6 +77,8 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                 row = json.loads(stripped)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{line_number}: invalid JSONL: {exc}") from exc
+            if not isinstance(row, dict):
+                raise ValueError(f"{path}:{line_number}: each JSONL row must be an object")
             row["_line_number"] = line_number
             cases.append(row)
     return cases
@@ -96,6 +98,8 @@ def validate_prompts(prompts: list[dict[str, Any]]) -> tuple[set[str], list[str]
             errors.append(f"prompt #{index}: missing prompt_id")
             continue
 
+        if prompt_id in prompt_ids:
+            errors.append(f"{prompt_id}: duplicate prompt_id")
         prompt_ids.add(prompt_id)
         missing = REQUIRED_PROMPT_FIELDS - set(prompt)
         if missing:
@@ -112,6 +116,8 @@ def validate_prompts(prompts: list[dict[str, Any]]) -> tuple[set[str], list[str]
         output_schema = prompt.get("output_schema")
         if not isinstance(output_schema, dict):
             errors.append(f"{prompt_id}: output_schema must be an object")
+        elif output_schema.get("type") not in {"object", "array"}:
+            errors.append(f"{prompt_id}: output_schema.type must be object or array")
 
     return prompt_ids, errors
 
@@ -120,7 +126,7 @@ def validate_cases(cases: list[dict[str, Any]], prompt_ids: set[str]) -> list[st
     errors: list[str] = []
     seen_case_ids: set[str] = set()
     cases_by_prompt: dict[str, int] = {prompt_id: 0 for prompt_id in prompt_ids}
-    injection_cases = 0
+    injection_cases_by_prompt: dict[str, int] = {prompt_id: 0 for prompt_id in prompt_ids}
 
     for case in cases:
         line = case.get("_line_number", "?")
@@ -131,6 +137,12 @@ def validate_cases(cases: list[dict[str, Any]], prompt_ids: set[str]) -> list[st
 
         case_id = case["case_id"]
         prompt_id = case["prompt_id"]
+        if not isinstance(case_id, str) or not case_id:
+            errors.append(f"golden_set line {line}: case_id must be a non-empty string")
+            continue
+        if not isinstance(prompt_id, str) or not prompt_id:
+            errors.append(f"golden_set line {line}: prompt_id must be a non-empty string")
+            continue
         if case_id in seen_case_ids:
             errors.append(f"golden_set line {line}: duplicate case_id {case_id}")
         seen_case_ids.add(case_id)
@@ -146,20 +158,23 @@ def validate_cases(cases: list[dict[str, Any]], prompt_ids: set[str]) -> list[st
             errors.append(f"golden_set line {line}: expected must be an object")
         if not isinstance(case["assertions"], list) or not case["assertions"]:
             errors.append(f"golden_set line {line}: assertions must be a non-empty list")
+        elif not all(isinstance(item, str) and item for item in case["assertions"]):
+            errors.append(f"golden_set line {line}: every assertion must be a non-empty string")
 
         searchable = json.dumps(case, ensure_ascii=False).lower()
-        if "injection" in searchable or "ignore previous" in searchable or "reveal" in searchable:
-            injection_cases += 1
+        if (
+            prompt_id in injection_cases_by_prompt
+            and ("injection" in searchable or "ignore previous" in searchable or "reveal" in searchable)
+        ):
+            injection_cases_by_prompt[prompt_id] += 1
 
     for prompt_id, count in cases_by_prompt.items():
         if count < 5:
             errors.append(f"{prompt_id}: expected at least 5 golden cases, found {count}")
 
-    if injection_cases < len(prompt_ids):
-        errors.append(
-            "golden_set: expected at least one injection-oriented case per prompt "
-            f"({len(prompt_ids)}), found {injection_cases}"
-        )
+    for prompt_id, count in injection_cases_by_prompt.items():
+        if count == 0:
+            errors.append(f"{prompt_id}: expected at least one injection-oriented golden case")
 
     return errors
 

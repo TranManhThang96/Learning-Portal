@@ -559,6 +559,23 @@ Performance notes:
 
 ## 16. Tài Liệu Tham Khảo
 
-- OWASP Top 10 for LLM Applications: các nhóm rủi ro như Prompt Injection, Sensitive Information Disclosure, Excessive Agency, Improper Output Handling và Unbounded Consumption.
-- NIST AI Risk Management Framework: tư duy Govern, Map, Measure, Manage cho quản trị rủi ro AI.
-- NCSC guidance về prompt injection: coi LLM như thành phần dễ bị nhầm lẫn giữa instruction và data; giảm hậu quả bằng thiết kế hệ thống.
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/)
+  gồm: Prompt Injection, Sensitive Information Disclosure, Supply Chain, Data and
+  Model Poisoning, Improper Output Handling, Excessive Agency, System Prompt
+  Leakage, Vector and Embedding Weaknesses, Misinformation và Unbounded Consumption.
+- Bài này tập trung sâu vào các rủi ro thường gặp nhất khi build app có tool/RAG: prompt injection, sensitive information disclosure, improper output handling, excessive agency, system prompt leakage, vector/embedding weakness và unbounded consumption. Supply chain, data/model poisoning và misinformation cần tiếp tục được review ở các bài về RAG, fine-tuning, local model và eval.
+- [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
+  bổ sung góc nhìn cho app tự lập kế hoạch/gọi tool: goal hijack, tool misuse,
+  identity/privilege abuse, supply chain, unexpected code execution, memory/context
+  poisoning, insecure inter-agent communication, cascading failures, human-agent
+  trust exploitation và rogue agents.
+- [NIST AI Risk Management Framework 1.0](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-ai-rmf-10):
+  tư duy Govern, Map, Measure, Manage cho quản trị rủi ro AI.
+- [NCSC - Prompt injection is not SQL injection](https://www.ncsc.gov.uk/blog-post/prompt-injection-is-not-sql-injection):
+  model không enforce ranh giới instruction/data; cần thiết kế để giới hạn hậu quả.
+- [NCSC - Guidelines for secure AI system development](https://www.ncsc.gov.uk/collection/guidelines-secure-ai-system-development/):
+  secure design, development, deployment, operation và maintenance.
+
+Các nguồn trên được đối chiếu ngày 2026-06-08. OWASP LLM Top 10 2025 và Agentic
+Top 10 2026 bổ sung cho nhau; danh sách agentic không thay thế security controls
+backend truyền thống như authz, input validation, isolation và incident response.

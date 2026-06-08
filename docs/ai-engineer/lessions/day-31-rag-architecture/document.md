@@ -190,3 +190,10 @@ Chưa nên production nếu:
 9. p95 latency có đạt SLO khi bật reranker không?
 10. Có thể chứng minh citation đúng bằng test tự động không?
 
+## 10. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+- [Sentence Transformers: retrieval methods](https://github.com/huggingface/sentence-transformers/blob/main/docs/sentence_transformer/usage/usage.rst): phân biệt query/document embedding và semantic retrieval.
+- [Qdrant Python client](https://github.com/qdrant/qdrant-client): `query_points`, payload filtering, collection và point operations.
+- [pgvector](https://github.com/pgvector/pgvector): cosine distance, HNSW/IVFFlat, filtered nearest-neighbor search và iterative scans.
+
+Các link này là reference cho API hiện hành. Architecture trong bài vẫn vendor-neutral: tenant/ACL phải được enforce trong mọi retrieval backend, không phụ thuộc đang dùng Qdrant, pgvector hay search engine khác.

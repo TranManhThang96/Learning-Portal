@@ -57,6 +57,7 @@ OUTPUT_SCHEMA:
   "answer": "string",
   "citations": [{"source_id": "string", "doc_id": "string", "chunk_id": "string"}],
   "confidence": "low|medium|high",
+  "policy_action": "allow|refuse|escalate",
   "needs_escalation": "boolean"
 }
 
@@ -98,3 +99,25 @@ RETRIEVED_CONTEXT:
 - Nếu retriever trả empty, model có còn được gọi không?
 - Raw question/output có được log ở production không?
 - Có test nào chứng minh indirect prompt injection không thành công không?
+
+## 8. Nguồn Kỹ Thuật Đã Xác Minh
+
+Truy cập ngày `2026-06-08`:
+
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/llm-top-10/):
+  threat model, đặc biệt prompt injection. Dùng làm taxonomy, không coi là control tự động.
+- [Pydantic models và validation](https://docs.pydantic.dev/latest/concepts/models/):
+  `model_validate_json`, validation errors và strict validation.
+- [Pydantic validators](https://docs.pydantic.dev/latest/concepts/validators/):
+  `model_validator(mode="after")` cho invariant giữa nhiều field.
+- [NeMo Guardrails configuration](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/index.html):
+  input/retrieval/dialog/execution/output rails.
+- [Guardrails AI documentation](https://guardrailsai.com/docs):
+  input/output guards và structured data validation.
+- [Llama Guard 4 model card](https://huggingface.co/meta-llama/Llama-Guard-4-12B):
+  safety classifier cho model input/output; cần đọc model card và tự eval domain.
+- [Microsoft Presidio](https://microsoft.github.io/presidio/):
+  PII analyzer/anonymizer và cảnh báo automated detection không đảm bảo bắt mọi PII.
+
+Context7 đã được dùng để kiểm tra Pydantic v2. Các tool safety thay đổi nhanh; trước
+khi copy API/config, khóa version và đọc migration/release notes của version đó.

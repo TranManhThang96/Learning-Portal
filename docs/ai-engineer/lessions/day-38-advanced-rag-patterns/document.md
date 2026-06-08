@@ -1,5 +1,7 @@
 # Document: Advanced RAG Cheat Sheet Và Runbook
 
+> Đây là tài liệu tra cứu đi kèm. Bài học và giải thích đầy đủ nằm trong `lession.md`; file này cung cấp prompt contract, decision matrix, budget, rollout runbook và nguồn kỹ thuật.
+
 ## 1. Mental model nhanh
 
 Advanced RAG là lớp tối ưu sau baseline, không phải baseline.
@@ -344,3 +346,13 @@ Khi answer sai, hỏi theo thứ tự:
 ## 18. Câu trả lời production readiness ngắn
 
 Dùng được trong production nếu pattern được chọn dựa trên lỗi đo được, có eval before/after, có trace, có fallback, giữ citation từ source thật và không phá vỡ tenant/ACL. Không nên productionize advanced RAG bằng cách bật đồng loạt query rewrite, multi-query, HyDE, agentic loop và GraphRAG khi chưa có evidence chúng cải thiện chất lượng hơn phần cost/latency/risk tăng thêm.
+
+## 19. Nguồn kỹ thuật đã xác minh
+
+Các primitive triển khai trong Day 38 được đối chiếu bằng Context7 ngày 2026-06-08:
+
+- [Qdrant Python Client](https://github.com/qdrant/qdrant-client): universal `query_points`, multi-stage `Prefetch` và RRF fusion cho multi-query/hybrid candidate generation.
+- [Sentence Transformers quickstart](https://github.com/huggingface/sentence-transformers/blob/main/docs/quickstart.rst): bi-encoder embeddings và cross-encoder reranking sau khi merge candidates.
+- [Sentence Transformers repository](https://github.com/huggingface/sentence-transformers): API và serving considerations cho embedding/reranking.
+
+Các pattern như rewrite, HyDE, decomposition, corrective RAG và GraphRAG không có một API chuẩn chung. Prompt/schema trong bài là contract thiết kế của khóa học; khi dùng framework cụ thể, phải pin version, đọc docs của framework đó và giữ eval/fallback độc lập với framework.

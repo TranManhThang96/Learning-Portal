@@ -218,6 +218,15 @@ Dataset nên dùng conversational `messages` để khớp chat model:
 {"messages":[{"role":"user","content":"Khách bị tính phí 2 lần, cần trả lời sao?"},{"role":"assistant","content":"{\"category\":\"billing\",\"priority\":\"high\",\"answer\":\"Mình đã ghi nhận vấn đề bị tính phí hai lần. Vui lòng cung cấp mã giao dịch để mình kiểm tra và hoàn tiền nếu phát sinh lỗi.\"}"}]}
 ```
 
+Trong training script của bài này, mỗi record được đổi thành conversational prompt-completion:
+
+```text
+prompt     = toàn bộ messages trước assistant cuối
+completion = assistant cuối
+```
+
+TRL có thể tính loss chỉ trên `completion`. Cách này rõ hơn việc bật `assistant_only_loss=True` mà chưa chứng minh chat template của tokenizer tạo được assistant mask. Nếu bạn muốn train trên nhiều assistant turn trong cùng conversation, hãy dùng `assistant_only_loss` nhưng phải inspect loss mask của template trước.
+
 Validation tối thiểu:
 
 - Mỗi dòng là JSON object.
@@ -228,6 +237,7 @@ Validation tối thiểu:
 - Có ít nhất một `user` và một `assistant`.
 - Assistant output parse được JSON nếu downstream yêu cầu JSON.
 - Không có PII thô như email, phone, token, card number nếu chưa được approval.
+- Giữ nguyên `group_id` và `split` từ Day 26; tuyệt đối không đưa `test` vào trainer.
 
 ## 8. Colab Path Và Local GPU Path
 

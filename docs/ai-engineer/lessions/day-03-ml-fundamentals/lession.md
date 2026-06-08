@@ -266,7 +266,124 @@ Cách xử lý:
 
 Lưu ý: score “quá đẹp” không luôn là tin tốt. Với data thực tế, F1/ROC-AUC gần hoàn hảo thường cần audit leakage trước khi ăn mừng.
 
-## 8. Baseline-First Mindset
+## 8. Bảy thuật toán cần biết
+
+Bạn không cần thuộc mọi công thức, nhưng phải hiểu model học kiểu quan hệ nào, cần preprocessing gì và trade-off production nằm ở đâu.
+
+### 8.1. Linear Regression
+
+**Linear Regression** dự đoán một số liên tục bằng tổng có trọng số:
+
+```text
+y_hat = w1*x1 + w2*x2 + ... + wn*xn + b
+```
+
+Ví dụ: dự đoán ETA, doanh thu hoặc giá. Model học weights sao cho sai số giữa `y_hat` và target nhỏ nhất.
+
+Nên dùng khi cần baseline nhanh, latency thấp và quan hệ gần tuyến tính. Không phù hợp khi pattern phi tuyến hoặc interaction phức tạp chưa được biểu diễn bằng feature.
+
+Production checks: outlier, multicollinearity, feature scale, residual theo segment và data drift.
+
+### 8.2. Logistic Regression
+
+Tên có chữ “Regression” nhưng đây là model **classification**. Model tính linear score rồi dùng sigmoid để tạo score trong `(0, 1)`:
+
+```text
+z = w dot x + b
+p = sigmoid(z)
+```
+
+Nó là baseline mạnh cho tabular data và TF-IDF text:
+
+- Train/inference nhanh.
+- Coefficient tương đối dễ giải thích.
+- Hỗ trợ regularization.
+- Probability thường dễ calibration hơn nhiều model phức tạp, nhưng vẫn phải kiểm tra.
+
+**Regularization** là hình phạt lên parameter quá lớn để giảm overfitting. Trong scikit-learn, `C` nhỏ hơn nghĩa là regularization mạnh hơn cho Logistic Regression.
+
+### 8.3. Decision Tree
+
+**Decision Tree** học các nhánh if/else:
+
+```text
+usage_drop > 40%?
+  yes -> failed_payment > 0?
+           yes -> high churn risk
+           no  -> medium risk
+  no  -> low risk
+```
+
+Tree học nonlinear pattern và interaction mà không cần scale numerical feature. Tree đơn lẻ dễ overfit, đặc biệt khi depth lớn hoặc leaf có quá ít samples.
+
+Nên dùng shallow tree để giải thích hoặc làm baseline rule-like. Cần giới hạn `max_depth`, `min_samples_leaf` và kiểm tra stability qua folds.
+
+### 8.4. Random Forest
+
+**Random Forest** train nhiều decision trees trên các sample/feature subset khác nhau rồi ensemble kết quả. Ensemble nghĩa là kết hợp nhiều model để giảm variance.
+
+Điểm mạnh:
+
+- Hợp tabular nonlinear data.
+- Ít tuning hơn boosting.
+- Robust hơn một tree đơn.
+
+Trade-off:
+
+- Artifact và inference cost tăng theo số/depth trees.
+- Khó giải thích hơn shallow tree/linear model.
+- Không phải lựa chọn tốt cho one-hot cực lớn hoặc SLA rất chặt nếu chưa benchmark.
+
+### 8.5. Gradient Boosting và XGBoost
+
+**Boosting** train model theo chuỗi; model sau tập trung sửa lỗi còn lại của ensemble trước. `XGBoost` là một implementation gradient boosting phổ biến; scikit-learn có `GradientBoosting*` và `HistGradientBoosting*`.
+
+Boosting thường rất mạnh trên tabular data, nhưng:
+
+- Hyperparameter tuning dễ overfit validation set.
+- Training tuần tự hơn Random Forest.
+- Probability vẫn cần calibration nếu dùng cho cost decision.
+- Cần ghi version cả library, params và dataset.
+
+Trong exercise dùng `HistGradientBoostingClassifier` để không thêm dependency bên thứ ba. Khi dùng XGBoost thật, phải kiểm tra tài liệu/version riêng thay vì giả định API giống scikit-learn hoàn toàn.
+
+### 8.6. Support Vector Machine
+
+**Support Vector Machine (SVM)** tìm decision boundary có margin lớn giữa các class. Kernel cho phép tạo boundary phi tuyến mà không tự viết feature mapping đầy đủ.
+
+SVM có thể tốt với dataset nhỏ-vừa và feature nhiều chiều, nhưng:
+
+- Kernel SVM scale kém khi số samples lớn.
+- Cần scaling.
+- Probability không tự nhiên như Logistic Regression và có thể cần calibration.
+- Inference cost phụ thuộc số support vectors.
+
+### 8.7. K-Nearest Neighbors
+
+**KNN** dự đoán dựa trên `k` điểm training gần input nhất. Nó gần như không có training cost nhưng chuyển chi phí sang inference.
+
+Trade-off:
+
+- Dễ hiểu, tốt cho baseline nhỏ.
+- Cần scaling vì dựa trên distance.
+- Naive inference gần tuyến tính theo số training rows.
+- Dễ gặp **curse of dimensionality**: khi số chiều cao, distance giữa các điểm kém phân biệt.
+
+Ở scale lớn, thường cần ANN index hoặc model khác thay vì scan toàn bộ training set.
+
+### 8.8. Chọn model theo context
+
+| Context | Nên thử trước | Nâng cấp khi |
+|---|---|---|
+| Regression baseline | Mean/median + Linear Regression | Residual cho thấy nonlinear pattern |
+| Tabular classification | Dummy + Logistic Regression | Baseline chưa đạt quality |
+| Tabular nonlinear | Random Forest/HistGradientBoosting | Evidence qua CV và error analysis |
+| Text classification | TF-IDF + Logistic Regression/SVM | Semantic/context dài là bottleneck |
+| Explainability cao | Linear model/shallow tree | Chỉ khi quality không đủ |
+| Latency rất thấp | Linear model/tree nhỏ | Benchmark chứng minh cần model khác |
+| Dataset nhỏ | Simple model + CV | Chưa nên tăng complexity sớm |
+
+## 9. Baseline-First Mindset
 
 Baseline là mốc tối thiểu để biết model có tạo giá trị không.
 
@@ -287,7 +404,7 @@ Không deploy model nếu chưa vượt baseline theo metric gắn với busines
 
 Ví dụ fraud detection có 1% fraud. Accuracy 99% có thể chỉ là model luôn predict “not fraud”. Baseline này vô dụng về business nếu recall fraud bằng 0.
 
-## 9. Metric Phải Gắn Với Business
+## 10. Metric Phải Gắn Với Business
 
 Không có metric đúng cho mọi bài toán.
 
@@ -299,9 +416,11 @@ Không có metric đúng cho mọi bài toán.
 | Medical screening | Bỏ sót ca bệnh | Recall/sensitivity, calibration |
 | Lead scoring | Sales gọi nhầm quá nhiều | Precision@K, lift |
 
+Với class imbalance, hãy xem metric theo precision-recall curve. scikit-learn `average_precision_score` tính **Average Precision (AP)** bằng tổng precision có trọng số theo mức tăng recall. AP không phải trapezoidal PR-AUC; khi report, ghi đúng tên metric để tránh so sánh sai. ROC-AUC vẫn hữu ích cho ranking tổng quát, nhưng có thể nhìn quá lạc quan khi positive class rất hiếm.
+
 Threshold là business decision, không chỉ là model decision. Model có thể output probability, còn threshold phụ thuộc cost false positive/false negative, capacity vận hành và risk tolerance.
 
-## 10. Workflow Experiment Gần Production
+## 11. Workflow Experiment Gần Production
 
 Một experiment tối thiểu nên có:
 
@@ -316,7 +435,7 @@ Một experiment tối thiểu nên có:
 9. Error analysis: model sai ở nhóm nào.
 10. Release decision: deploy, không deploy, hoặc cần thêm data.
 
-## 11. Production Concerns
+## 12. Production Concerns
 
 ### Train-serving skew
 
@@ -357,7 +476,7 @@ Model service cần fallback rõ:
 - Nếu confidence thấp thì route sang human review?
 - Nếu drift mạnh thì rollback model version nào?
 
-## 12. Dùng Được Trong Production Không?
+## 13. Dùng Được Trong Production Không?
 
 **Có, nhưng không phải chỉ với một notebook và một metric đẹp.**
 
@@ -375,7 +494,7 @@ Day 3 đủ làm nền cho production nếu thỏa các điều kiện:
 
 Nếu thiếu các điều kiện trên, bài này vẫn dùng tốt cho prototype/offline analysis, nhưng chưa đủ để deploy vào production có user thật.
 
-## 13. Checklist Tự Kiểm
+## 14. Checklist Tự Kiểm
 
 - [ ] Tôi phân biệt được supervised, unsupervised và reinforcement learning.
 - [ ] Tôi biết khi nào bài toán là regression, classification, ranking hoặc clustering.
@@ -386,10 +505,17 @@ Nếu thiếu các điều kiện trên, bài này vẫn dùng tốt cho prototy
 - [ ] Tôi hiểu cross-validation đổi compute lấy metric ổn định hơn.
 - [ ] Tôi giải thích được overfitting, underfitting và bias-variance.
 - [ ] Tôi luôn tạo baseline trước model phức tạp.
+- [ ] Tôi giải thích được trade-off của Linear/Logistic Regression, Tree, Random Forest, Boosting, SVM và KNN.
 - [ ] Tôi trả lời được điều kiện để dùng model trong production.
 
-## 14. Kết Nối Sang Day 4
+## 15. Kết Nối Sang Day 4
 
 Day 4 sẽ đi vào Python ML Stack: NumPy, Pandas, scikit-learn, notebook workflow và cách hiện thực pipeline cơ bản. Day 3 cho bạn “kỷ luật đánh giá”; Day 4 cho bạn công cụ để chạy kỷ luật đó bằng code.
 
 Trước khi sang Day 4, hãy làm [exercise.md](./exercise.md). Bài thực hành sẽ dùng scikit-learn để so sánh baseline, Logistic Regression, Random Forest và HistGradientBoosting với split, metrics và timing rõ ràng.
+
+## Nguồn kỹ thuật đã kiểm tra
+
+- scikit-learn stable docs qua Context7, library ID `/websites/scikit-learn_stable`.
+- Đã đối chiếu: `Pipeline`, `train_test_split(stratify=...)`, cross-validation, `LogisticRegression`, `RandomForestClassifier`, `HistGradientBoostingClassifier` và `average_precision_score`.
+- AP được định nghĩa khác trapezoidal area dưới precision-recall curve; bài và exercise dùng tên `average_precision`.

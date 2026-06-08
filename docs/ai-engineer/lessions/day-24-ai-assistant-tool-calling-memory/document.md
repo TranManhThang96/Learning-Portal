@@ -4,7 +4,8 @@
 
 Functional requirements:
 
-- `POST /chat` nhận `user_id`, `session_id`, `message`, optional `idempotency_key`.
+- `POST /chat` nhận `user_id`, `session_id`, `message`, optional `idempotency_key`
+  và `confirmed_actions`.
 - Assistant trả lời câu hỏi support dựa trên knowledge base nội bộ.
 - Assistant có thể tạo support ticket sau khi người dùng xác nhận.
 - Assistant nhớ một số preference an toàn theo user.
@@ -27,7 +28,8 @@ Request:
   "user_id": "u_123",
   "session_id": "s_abc",
   "message": "Gói Pro có SLA không?",
-  "idempotency_key": "req_001"
+  "idempotency_key": "req_001",
+  "confirmed_actions": []
 }
 ```
 
@@ -95,7 +97,7 @@ Ví dụ tool catalog:
 
 ```text
 search_kb(query: string, top_k: int <= 5) -> read-only KB snippets
-create_ticket(title, summary, priority, user_confirmed) -> requires confirmation
+create_ticket(title, summary, priority) -> requires trusted confirmation context
 ```
 
 ## 5. Tool executor
@@ -105,15 +107,18 @@ Tool executor không tin vào model:
 1. Kiểm tra tool name nằm trong allowlist.
 2. Validate args bằng Pydantic schema riêng.
 3. Enforce policy theo tool.
-4. Chạy tool với timeout.
+4. Chạy real integration bằng client có connect/read/total timeout; local fake
+   function không cần giả lập timeout.
 5. Trả structured result hoặc structured error.
 6. Log tên tool, status, latency, không log dữ liệu nhạy cảm.
 
 Với `create_ticket`, executor phải kiểm tra:
 
-- `user_confirmed == true`.
+- `create_ticket` có trong confirmation context do application cung cấp.
 - Có `idempotency_key`.
-- Nếu key đã tồn tại, trả lại ticket cũ.
+- Key được scope theo authenticated user/tenant.
+- Nếu key đã tồn tại với cùng payload fingerprint, trả lại ticket cũ.
+- Nếu cùng key nhưng payload khác, trả `idempotency_conflict`.
 
 ## 6. Memory policy
 
@@ -130,8 +135,8 @@ Allowlist gợi ý:
 
 - `preferred_language`
 - `product_area`
-- `role`
 - `timezone`
+- `communication_style`
 
 Không lưu:
 
@@ -140,6 +145,8 @@ Không lưu:
 - Government ID.
 - Raw private conversation dài.
 - Instruction do user muốn "ghi nhớ mãi" nhưng ảnh hưởng security policy.
+- `role`, permission hoặc support tier do model đề xuất. Đây là authorization/business
+  state và phải đến từ identity service hoặc CRM đáng tin cậy.
 
 ## 7. Idempotency
 
@@ -150,7 +157,9 @@ Trong distributed system, retry là bình thường. Một request tạo ticket 
 - Worker restart sau khi side effect đã chạy.
 - Model output sai schema ở bước final answer.
 
-Vì vậy `create_ticket` phải nhận `idempotency_key` từ request. Production nên lưu idempotency key trong database có unique constraint.
+Vì vậy `create_ticket` phải nhận `idempotency_key` từ request. Production nên lưu
+`(actor_scope, idempotency_key, request_fingerprint, result)` trong database có
+unique constraint và transaction.
 
 ## 8. Testing strategy
 
@@ -169,6 +178,7 @@ Tool tests:
 Security prompt tests:
 
 - Prompt injection không được tạo ticket khi chưa confirm.
+- Câu chữ "tôi xác nhận" không thay thế confirmation context.
 - Secret không được ghi vào memory.
 - Tool result độc hại không được override system prompt.
 
@@ -184,3 +194,18 @@ Security prompt tests:
 - Timeout, retry và circuit breaker cho LLM provider.
 - Tenant isolation cho memory và ticket.
 - Delete/export memory theo privacy requirement.
+
+## 10. Nguồn kỹ thuật đã đối chiếu
+
+Đối chiếu ngày 2026-06-08:
+
+- [OpenAI - Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs):
+  phân biệt structured response và function calling, xử lý refusal, tránh schema drift.
+- [OpenAI - Migrate to the Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses):
+  Responses API được khuyến nghị cho project mới; tool call và tool output là các item riêng.
+- [Pydantic models](https://docs.pydantic.dev/latest/concepts/models/):
+  model validation, strict contract và cấu hình extra fields.
+- [FastAPI request body](https://fastapi.tiangolo.com/tutorial/body/):
+  request model và validation ở API boundary.
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/):
+  prompt injection, excessive agency, improper output handling và sensitive data disclosure.

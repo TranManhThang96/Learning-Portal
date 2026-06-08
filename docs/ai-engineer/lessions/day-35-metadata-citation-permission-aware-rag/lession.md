@@ -91,6 +91,8 @@ Schema gợi ý:
 
 Không nên expose `source_uri` thẳng ra client nếu đó là S3 path, internal wiki URL hoặc file path nội bộ. Client nên nhận một citation object đã được backend render qua proxy hoặc signed URL ngắn hạn.
 
+Trong Vector DB, nên project thêm field boolean `deleted=false` để pre-filter nhanh. `deleted_at` vẫn nằm trong canonical metadata/audit store để biết thời điểm xóa. Hai field phải được cập nhật atomically hoặc qua event idempotent; nếu chúng lệch nhau, rule an toàn là deny.
+
 ## 3. Permission-aware Retrieval
 
 Permission-aware RAG có nguyên tắc đơn giản: chunk không được đọc thì không được vào prompt.
@@ -227,6 +229,8 @@ client click citation
 ```
 
 Điểm quan trọng: permission phải được check lại khi user mở citation, vì quyền có thể đã thay đổi sau lúc answer được tạo.
+
+`source_map` chỉ là snapshot để trace answer, không phải authorization grant có hiệu lực mãi mãi. Endpoint mở source phải load trạng thái document/ACL hiện tại rồi mới tạo signed URL hoặc proxy nội dung.
 
 ## 8. Versioning, Tombstone Và Delete
 

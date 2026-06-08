@@ -67,14 +67,19 @@ def sample_data() -> pd.DataFrame:
         ("đóng gói bình thường", "neutral"),
         ("sản phẩm giống hình", "neutral"),
     ]
-    variants: list[tuple[str, str]] = []
+    variants: list[tuple[str, str, str]] = []
     prefixes = ["", "review: ", "khách nói: "]
     suffixes = ["", " lần sau sẽ cân nhắc", " mình đặt cho gia đình"]
-    for text, label in rows:
+    for row_index, (text, label) in enumerate(rows):
+        group_id = f"synthetic-{row_index:03d}"
         for prefix in prefixes:
             for suffix in suffixes:
-                variants.append((normalize_text(prefix + text + suffix), label))
-    return pd.DataFrame(variants, columns=["text", "label"]).sample(frac=1, random_state=SEED).reset_index(drop=True)
+                variants.append((normalize_text(prefix + text + suffix), label, group_id))
+    return (
+        pd.DataFrame(variants, columns=["text", "label", "group_id"])
+        .sample(frac=1, random_state=SEED)
+        .reset_index(drop=True)
+    )
 
 
 def load_data() -> pd.DataFrame:
@@ -83,12 +88,21 @@ def load_data() -> pd.DataFrame:
         missing = {"text", "label"} - set(df.columns)
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
-        df = df[["text", "label"]].copy()
+        columns = ["text", "label"]
+        if "group_id" in df.columns:
+            columns.append("group_id")
+        df = df[columns].copy()
     else:
         df = sample_data()
 
     df["text"] = df["text"].map(normalize_text)
     df["label"] = df["label"].astype(str).str.strip().str.lower()
+    if "group_id" in df.columns:
+        if df["group_id"].isna().any():
+            raise ValueError("group_id must not be null when the column is provided.")
+        df["group_id"] = df["group_id"].astype(str).str.strip()
+        if (df["group_id"] == "").any():
+            raise ValueError("group_id must not be blank when the column is provided.")
     df = df[(df["text"] != "") & (df["label"] != "")].drop_duplicates()
 
     unknown = sorted(set(df["label"]) - set(LABELS))
@@ -104,6 +118,39 @@ def load_data() -> pd.DataFrame:
 
 
 def split_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if "group_id" in df.columns:
+        group_labels = df.groupby("group_id", as_index=False)["label_id"].agg(
+            lambda values: values.iloc[0] if values.nunique() == 1 else -1
+        )
+        if (group_labels["label_id"] == -1).any():
+            raise ValueError("Each group_id must contain exactly one label.")
+
+        min_group_count = group_labels["label_id"].value_counts().min()
+        if min_group_count < 3:
+            raise ValueError("Each label needs at least 3 groups for grouped train/validation/test split.")
+
+        rng = np.random.default_rng(SEED)
+        split_group_ids: dict[str, list[str]] = {"train": [], "validation": [], "test": []}
+        for _, label_groups in group_labels.groupby("label_id"):
+            group_ids = label_groups["group_id"].astype(str).to_numpy(copy=True)
+            rng.shuffle(group_ids)
+            holdout_per_split = max(1, int(round(len(group_ids) * 0.2)))
+            max_holdout_per_split = (len(group_ids) - 1) // 2
+            holdout_per_split = min(holdout_per_split, max_holdout_per_split)
+
+            split_group_ids["validation"].extend(group_ids[:holdout_per_split].tolist())
+            split_group_ids["test"].extend(group_ids[holdout_per_split : 2 * holdout_per_split].tolist())
+            split_group_ids["train"].extend(group_ids[2 * holdout_per_split :].tolist())
+
+        def rows_for(group_ids: list[str]) -> pd.DataFrame:
+            return df[df["group_id"].isin(group_ids)].reset_index(drop=True)
+
+        return (
+            rows_for(split_group_ids["train"]),
+            rows_for(split_group_ids["validation"]),
+            rows_for(split_group_ids["test"]),
+        )
+
     train_df, test_df = train_test_split(df, test_size=0.2, random_state=SEED, stratify=df["label_id"])
     train_df, val_df = train_test_split(train_df, test_size=0.25, random_state=SEED, stratify=train_df["label_id"])
     return train_df.reset_index(drop=True), val_df.reset_index(drop=True), test_df.reset_index(drop=True)
@@ -262,6 +309,9 @@ def write_metadata(df: pd.DataFrame, train_df: pd.DataFrame, val_df: pd.DataFram
         "labels": LABELS,
         "data": {
             "data_path": DATA_PATH or "synthetic_fallback",
+            "split_strategy": (
+                "grouped_target_60_20_20" if "group_id" in df.columns else "stratified_random_60_20_20"
+            ),
             "total_size": int(len(df)),
             "train_size": int(len(train_df)),
             "validation_size": int(len(val_df)),

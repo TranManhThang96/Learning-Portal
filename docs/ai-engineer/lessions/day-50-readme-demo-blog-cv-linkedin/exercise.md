@@ -36,6 +36,8 @@ Acceptance criteria:
 - Có sample query.
 - Có link hoặc section evaluation report.
 - Không claim quá mức.
+- Mọi metric có ngày/version/applicable case count và lấy từ report thật.
+- Mỗi capability chính có link tới code, test hoặc artifact chứng minh.
 
 ## Bài Tập 2: Viết Demo Script
 
@@ -55,6 +57,9 @@ Chuẩn bị 3 query demo:
 1. Normal answer with citation.
 2. No-answer/out-of-scope.
 3. ACL hoặc prompt injection refusal.
+
+Chạy lại script từ clean clone/clean environment. Ghi trước expected evidence cho
+từng mốc để tránh video chỉ nói claim mà không mở artifact.
 
 ## Bài Tập 3: Viết Blog Outline
 
@@ -98,6 +103,13 @@ Designed a permission-aware retrieval pipeline with tenant/role filtering, PII-s
 Implemented a golden-set evaluation workflow measuring Recall@K, MRR, citation correctness, no-answer accuracy and format pass rate.
 ```
 
+Trước mỗi bullet, điền bảng:
+
+| Claim | Evidence file/link | Measured result | Caveat |
+|---|---|---|---|
+
+Không có evidence thì giảm claim hoặc hoàn thiện artifact, không bịa metric.
+
 ## Bài Tập 5: Viết LinkedIn Post
 
 Viết một bản tiếng Việt hoặc English, dài 120-220 từ.
@@ -117,8 +129,8 @@ Chạy audit:
 
 ```bash
 git status --short
-rg -n "api[_-]?key|secret|token|password|BEGIN PRIVATE KEY|sk-" .
-find . -name ".env" -o -name "*.pem" -o -name "*.key"
+git grep -nEi 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|sk-[A-Za-z0-9_-]{16,}|password[[:space:]]*[:=]'
+find . -type f \( -name ".env" -o -name "*.pem" -o -name "*.key" \) -print
 ```
 
 Kiểm tra thủ công:
@@ -128,6 +140,8 @@ Kiểm tra thủ công:
 - Demo screenshots/logs đã redact.
 - `.env.example` chỉ có placeholder.
 - `evaluation_report.md` ghi limitations.
+- Secret scan bao phủ git history; secret từng lộ đã revoke/rotate.
+- Link trong README được kiểm tra từ rendered page.
 
 ## Bài Tập 7: Final Portfolio Review
 
@@ -150,3 +164,4 @@ Tự trả lời 6 câu:
 - [ ] Public repo safety audit.
 - [ ] Evaluation report linked from README.
 - [ ] Known limitations rõ và trung thực.
+- [ ] Claim-to-evidence matrix không còn claim thiếu bằng chứng.

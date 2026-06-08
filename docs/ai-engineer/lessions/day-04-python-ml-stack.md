@@ -1,8 +1,8 @@
 # Day 4: Python ML Stack
 
-Day 4 đã được tách thành folder riêng để dễ học theo từng phần:
+Bắt đầu từ bài học chính; reference và exercise có vai trò tách biệt:
 
-- [Bài học chính](./day-04-python-ml-stack/lession.md)
+- [Bài học chính](./day-04-python-ml-stack/lession.md): toàn bộ NumPy, Pandas, EDA, Matplotlib, Jupyter và scikit-learn workflow.
 - [Stack và API reference](./day-04-python-ml-stack/document.md)
 - [Exercise: Titanic-style production pipeline](./day-04-python-ml-stack/exercise.md)
 

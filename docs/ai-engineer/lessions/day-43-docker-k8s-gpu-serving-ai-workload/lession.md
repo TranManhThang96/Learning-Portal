@@ -454,7 +454,8 @@ Kubernetes GPU node checklist:
 ```bash
 nvidia-smi
 kubectl get nodes
-kubectl describe node <gpu-node> | grep -A5 "nvidia.com/gpu"
+GPU_NODE="${GPU_NODE:-gpu-node-1}"
+kubectl describe node "${GPU_NODE}" | grep -A5 "nvidia.com/gpu"
 kubectl get pods -n nvidia-device-plugin
 ```
 
@@ -606,11 +607,17 @@ spec:
             limits:
               cpu: "2"
               memory: "4Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
@@ -618,7 +625,6 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
@@ -656,6 +662,8 @@ metadata:
     app: model-server
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: model-server
@@ -691,6 +699,13 @@ spec:
               cpu: "8"
               memory: "24Gi"
               nvidia.com/gpu: 1
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           volumeMounts:
             - name: model-cache
               mountPath: /models/huggingface
@@ -698,7 +713,6 @@ spec:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 120
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 20
@@ -706,7 +720,6 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 180
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
@@ -719,8 +732,10 @@ spec:
 GPU production note:
 
 - `replicas: 1` là mặc định an toàn cho một model server khi bạn chưa có load test.
+- `strategy: Recreate` tránh rollout tạo pod GPU thứ hai khi cluster chỉ có một GPU phù hợp, nhưng chấp nhận downtime. Nếu có GPU dự phòng và cần zero-downtime, dùng `RollingUpdate` với capacity đã reserve, warmup và smoke test trước khi nhận traffic.
+- `startupProbe` bảo vệ model load chậm: readiness/liveness chỉ bắt đầu sau khi startup thành công. Không chỉ kéo dài `initialDelaySeconds` một cách đoán mò.
 - Scale GPU theo queue depth, tokens/sec, p95 latency và VRAM, không chỉ CPU.
-- Nếu model load lâu, dùng readiness delay dài, rolling strategy cẩn thận và warmup trước khi nhận traffic.
+- Nếu model load lâu, sizing `startupProbe` theo benchmark cold start, chọn rollout strategy theo GPU capacity và warm up trước khi nhận traffic.
 - Với multi-GPU hoặc tensor parallel, manifest cần thêm logic riêng của serving engine.
 
 ## 11. Helm overview
@@ -919,6 +934,7 @@ Nếu thiếu các điều kiện trên, hệ thống vẫn có thể dùng cho 
 - Kubernetes GPU scheduling: https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
 - Kubernetes node selection: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
 - Kubernetes taints/tolerations: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+- Kubernetes startup/liveness/readiness probes: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 - NVIDIA Kubernetes device plugin: https://github.com/NVIDIA/k8s-device-plugin
 - KServe overview: https://kserve.github.io/kserve/
 - Ray Serve overview: https://docs.ray.io/en/latest/serve/

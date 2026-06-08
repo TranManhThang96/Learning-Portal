@@ -1,5 +1,7 @@
 # Day 2: Math đủ dùng cho ML
 
+Day 1 đã giúp bạn chọn đúng loại solution. Day 2 giải thích ngôn ngữ toán nằm bên dưới score, similarity, probability và training; Day 3 sẽ dùng các khái niệm này để xây workflow train/evaluate model có kỷ luật.
+
 ## Mục tiêu
 
 Sau bài này, bạn cần làm được các việc sau:
@@ -217,7 +219,7 @@ Vì sao production quan tâm:
 
 ## 6. Derivative, gradient và gradient descent
 
-Derivative cho biết function thay đổi thế nào khi input thay đổi một chút. Với:
+**Derivative (đạo hàm)** cho biết function một biến thay đổi thế nào khi input thay đổi một lượng rất nhỏ. Với:
 
 ```text
 f(x) = x^2
@@ -253,9 +255,65 @@ Production/debug signal:
 - Train loss tốt nhưng validation loss xấu: overfitting hoặc data leakage/split sai.
 - Metric business không tăng dù loss giảm: objective không khớp business target.
 
+### 6.1. Partial derivative và gradient
+
+Model có nhiều parameter nên loss thường là function nhiều biến. **Partial derivative (đạo hàm riêng)** đo loss thay đổi theo một parameter trong khi tạm coi parameter khác là cố định.
+
+```text
+L(w1, w2) = (w1 - 2)^2 + 3(w2 + 1)^2
+
+partial L / partial w1 = 2(w1 - 2)
+partial L / partial w2 = 6(w2 + 1)
+```
+
+**Gradient** là vector gom mọi đạo hàm riêng:
+
+```text
+gradient(L) = [partial L / partial w1, partial L / partial w2]
+```
+
+Gradient chỉ hướng loss tăng nhanh nhất, vì vậy optimizer cập nhật theo hướng ngược lại:
+
+```text
+w = w - learning_rate * gradient
+```
+
+Debug theo shape:
+
+```text
+parameters.shape == gradients.shape
+```
+
+Nếu hai shape khác nhau, training code đang cộng/trừ sai contract.
+
+### 6.2. Chain rule: gradient đi xuyên qua nhiều lớp
+
+**Chain rule (quy tắc dây chuyền)** dùng khi output được tạo bởi nhiều function nối tiếp. Nếu:
+
+```text
+z = w * x + b
+p = sigmoid(z)
+loss = binary_cross_entropy(p, y)
+```
+
+thì ảnh hưởng của `w` lên loss đi qua `z` rồi `p`:
+
+```text
+d(loss)/dw
+  = d(loss)/dp
+  * dp/dz
+  * dz/dw
+```
+
+Backpropagation trong neural network là chain rule được áp dụng có hệ thống từ output về parameters. Bạn chưa cần tự chứng minh công thức ở Day 2, nhưng phải hiểu ba lỗi thường gặp:
+
+- Một operation không differentiable hoặc bị tách khỏi graph làm gradient không đi tiếp.
+- Gradient quá lớn qua nhiều lớp gây exploding gradient.
+- Gradient quá nhỏ qua nhiều lớp gây vanishing gradient.
+
 ## 7. Probability: model output không phải sự thật
 
-Classifier thường trả probability:
+**Probability distribution (phân phối xác suất)** mô tả xác suất của các kết quả có thể xảy ra. Với binary classification, distribution có hai giá trị cộng lại bằng 1:
 
 ```json
 {
@@ -265,6 +323,14 @@ Classifier thường trả probability:
 ```
 
 Nhưng probability model không mặc nhiên calibrated. `0.82` chỉ đáng tin như "82% risk" nếu model đã được đánh giá calibration trên data tương tự production.
+
+Ba khái niệm cần phân biệt:
+
+- **Prior probability**: xác suất trước khi thấy signal mới, ví dụ fraud base rate là 0.1%.
+- **Conditional probability**: xác suất khi đã biết một điều kiện, ví dụ `P(fraud | new_device)`.
+- **Likelihood**: signal quan sát được có khả năng xuất hiện thế nào nếu giả thuyết đúng.
+
+Một classifier có thể tạo raw score, sau đó sigmoid/softmax biến score thành số trong khoảng xác suất. Việc tổng bằng 1 không tự bảo đảm model đã calibrated.
 
 Best practice:
 
@@ -312,6 +378,16 @@ posterior = prior * likelihood / evidence
 ```
 
 Điểm quan trọng nhất với production: base rate rất quan trọng. Nếu fraud base rate chỉ 0.1%, một signal "có vẻ fraud" vẫn có thể tạo nhiều false positive nếu không tính prior.
+
+Ví dụ Bayes với 100.000 giao dịch:
+
+```text
+fraud thật: 100 giao dịch (0.1%)
+detector bắt đúng 90% fraud       -> 90 true positives
+detector báo nhầm 1% giao dịch tốt -> khoảng 999 false positives
+```
+
+Trong các cảnh báo được tạo, chỉ khoảng `90 / (90 + 999) = 8.3%` là fraud thật. Đây là lý do accuracy hoặc một signal nhìn có vẻ mạnh vẫn chưa đủ; phải xét base rate, precision, review capacity và cost.
 
 ## 9. Ví dụ gần production: embedding search bằng NumPy
 
@@ -573,10 +649,17 @@ Không nên dùng production nếu:
 
 ## 14. Checklist cuối ngày
 
-- Bạn giải thích được vì sao `X @ w` là batch scoring.
-- Bạn phân biệt được `*` element-wise và `@` matrix multiplication trong NumPy.
-- Bạn viết được cosine similarity có kiểm tra zero vector.
-- Bạn biết khi nào cosine tốt hơn dot product và ngược lại.
-- Bạn đọc được loss curve cơ bản và nhận ra learning rate quá lớn/quá nhỏ.
-- Bạn dùng expected loss để quyết định approve/review/block thay vì chỉ nhìn label.
-- Bạn nêu được điều kiện để math/code này đủ an toàn cho production.
+- [ ] Tôi giải thích được vì sao `X @ w` là batch scoring.
+- [ ] Tôi phân biệt được `*` element-wise và `@` matrix multiplication trong NumPy.
+- [ ] Tôi phân biệt derivative, partial derivative, gradient và chain rule.
+- [ ] Tôi viết được cosine similarity có kiểm tra zero vector.
+- [ ] Tôi biết khi nào cosine tốt hơn dot product và ngược lại.
+- [ ] Tôi đọc được loss curve cơ bản và nhận ra learning rate quá lớn/quá nhỏ.
+- [ ] Tôi giải thích được vì sao base rate thấp làm precision giảm.
+- [ ] Tôi dùng expected loss để quyết định approve/review/block thay vì chỉ nhìn label.
+- [ ] Tôi nêu được điều kiện để math/code này đủ an toàn cho production.
+
+## Nguồn kỹ thuật đã kiểm tra
+
+- NumPy 2.4 docs qua Context7, library ID `/websites/numpy_doc_2_4`: `ndarray`, shape/dtype, broadcasting, `@` matrix multiplication, `*` element-wise multiplication, views/copies, `np.isfinite` và `np.linalg.norm`.
+- Lưu ý API: `np.argpartition` chỉ chọn partition top-k, không sort đầy đủ; code phải sort lại candidate top-k trước khi trả kết quả.

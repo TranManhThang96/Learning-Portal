@@ -25,7 +25,7 @@ Thiết lập API key và model:
 
 ```bash
 export OPENAI_API_KEY="..."
-export MODEL="gpt-4.1-mini"
+export MODEL="gpt-5.5"
 ```
 
 Nếu không muốn gọi provider thật, bạn vẫn có thể đọc code và thay phần gọi model bằng mock. Mục tiêu chính của bài là hiểu production shape và trade-off.
@@ -37,10 +37,12 @@ Tạo file `ticket_schema.py`:
 ```python
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TicketTriage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category: Literal["billing", "bug", "howto", "account", "other"]
     priority: Literal["low", "medium", "high", "urgent"]
     needs_human: bool
@@ -105,15 +107,17 @@ class RawSdkTriage:
                             "strict": True,
                         }
                     },
+                    max_output_tokens=1200,
+                    store=False,
                     metadata={
                         "trace_id": trace_id,
-                        "tenant_id": tenant_id,
-                        "user_id": user_id,
                         "prompt_id": "support_triage",
                         "prompt_version": "v1",
                         "schema_version": "ticket_triage.v1",
                     },
                 )
+                if response.status != "completed" or not response.output_text:
+                    raise RuntimeError("model response was incomplete, empty, or refused")
                 result = TicketTriage.model_validate_json(response.output_text)
                 self._log("success", trace_id, started, attempt)
                 return result
@@ -123,6 +127,9 @@ class RawSdkTriage:
                 time.sleep(0.25 * (2**attempt))
             except ValidationError as exc:
                 self._log("validation_error", trace_id, started, attempt, exc)
+                raise
+            except RuntimeError as exc:
+                self._log("response_error", trace_id, started, attempt, exc)
                 raise
 
         self._log("failure", trace_id, started, 2, last_error)
@@ -149,7 +156,7 @@ class RawSdkTriage:
 
 
 if __name__ == "__main__":
-    service = RawSdkTriage(model=os.environ.get("MODEL", "gpt-4.1-mini"))
+    service = RawSdkTriage(model=os.environ.get("MODEL", "gpt-5.5"))
     output = service.triage(
         ticket="Khách bị tính phí hai lần sau khi nâng cấp gói enterprise và yêu cầu hoàn tiền ngay.",
         tenant_id="tenant_demo",
@@ -206,10 +213,9 @@ class LangChainTriage:
     def __init__(self, model: str) -> None:
         llm = ChatOpenAI(
             model=model,
-            temperature=0,
             timeout=20,
             max_retries=0,
-        ).with_structured_output(TicketTriage)
+        ).with_structured_output(TicketTriage, method="json_schema")
         self.chain = PROMPT | llm
         self.model = model
 
@@ -252,7 +258,7 @@ class LangChainTriage:
 
 
 if __name__ == "__main__":
-    service = LangChainTriage(model=os.environ.get("MODEL", "gpt-4.1-mini"))
+    service = LangChainTriage(model=os.environ.get("MODEL", "gpt-5.5"))
     output = service.triage(
         ticket="Khách báo không đăng nhập được sau khi bật SSO cho toàn bộ công ty.",
         tenant_id="tenant_demo",
@@ -272,6 +278,7 @@ Ghi lại:
 - Code có ngắn hơn Raw SDK không?
 - Bạn còn thấy request schema thấp-level rõ như Raw SDK không?
 - Metadata trace nằm ở đâu?
+- Vì sao nên ghi rõ `method="json_schema"` khi muốn so sánh công bằng với Raw SDK structured output? Nếu bỏ tham số này, LangChain có thể dùng strategy structured output khác tùy model/provider.
 
 ## Exercise 4: So Sánh Hai Cách
 
@@ -369,6 +376,9 @@ Review lại code của bạn và đánh dấu:
 - [ ] Có timeout.
 - [ ] Có retry policy rõ.
 - [ ] Có schema validation.
+- [ ] Schema từ chối field lạ và không drift khỏi type trong code.
+- [ ] Có error path cho refusal/incomplete response.
+- [ ] Đã quyết định rõ provider retention (`store=False` nếu phù hợp).
 - [ ] Có `trace_id`.
 - [ ] Có `prompt_version`.
 - [ ] Có `schema_version`.

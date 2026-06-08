@@ -23,3 +23,25 @@ def test_valid_tool_action():
     )
     assert action.tool is not None
     assert action.tool.name == "search_kb"
+
+
+def test_answer_rejects_tool_payload():
+    with pytest.raises(ValidationError):
+        AssistantAction.model_validate(
+            {
+                "action": "answer",
+                "final_answer": "Done",
+                "tool": {"name": "search_kb", "args": {"query": "sla"}},
+            }
+        )
+
+
+def test_action_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        AssistantAction.model_validate(
+            {
+                "action": "answer",
+                "final_answer": "Done",
+                "unexpected": "must not be silently ignored",
+            }
+        )

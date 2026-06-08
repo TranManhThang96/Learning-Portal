@@ -1,4 +1,6 @@
-# Document: AI Mindset cho Senior SE
+# Day 1 Document: AI Decision Reference
+
+Đây là tài liệu tra cứu sau khi đã học [lession.md](./lession.md), không phải phần bài giảng bắt buộc theo thứ tự. Dùng mục lục bên dưới để tìm nhanh decision rule, architecture, checklist hoặc thuật ngữ khi làm [exercise.md](./exercise.md).
 
 ## 1. Vì sao Senior SE cần mindset khác khi bước vào AI
 
@@ -573,4 +575,3 @@ Có. Các pattern trong bài này dùng được trong production vì chúng là
 - `RAG`: lấy thông tin liên quan từ corpus rồi đưa vào LLM để trả lời.
 - `Guardrail`: lớp kiểm soát input/output/action để giảm rủi ro.
 - `Human-in-the-loop`: con người review/approve các case rủi ro hoặc model không chắc.
-

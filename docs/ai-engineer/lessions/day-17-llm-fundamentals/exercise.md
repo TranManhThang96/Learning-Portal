@@ -11,6 +11,8 @@ Chọn một trong hai hướng:
 - Local: cài Ollama và pull một model nhỏ, ví dụ `llama3.1:8b`, `qwen2.5:7b` hoặc model tương đương máy bạn chạy được.
 - Hosted: dùng provider có API tương thích OpenAI-style. Không commit API key vào repo.
 
+Tên model chỉ là ví dụ. Chọn tag đang có trong registry/runtime của bạn, ghi lại chính xác model tag và digest/revision để lần chạy sau có thể tái hiện.
+
 Python packages:
 
 ```bash

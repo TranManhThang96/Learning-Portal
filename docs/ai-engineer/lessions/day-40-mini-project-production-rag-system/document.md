@@ -1,5 +1,7 @@
 # Document: Production RAG Mini-project Template, Checklist Và Runbook
 
+> Đây là tài liệu tham khảo/triển khai đi kèm. Bài học end-to-end nằm trọn trong `lession.md`; file này cung cấp contract, template, checklist, runbook và nguồn API đã xác minh.
+
 ## 1. Mental model nhanh
 
 Production RAG không chỉ là:
@@ -89,7 +91,7 @@ Request: `multipart/form-data`
 | `file` | file | `.md`, `.txt`, `.pdf`, `.docx` |
 | `title` | string | Tên hiển thị |
 | `version` | string | Version tài liệu |
-| `acl_roles` | string array | Role được đọc |
+| `acl_roles` | string array | Chỉ admin được gán; server phải validate theo allowlist/assignable roles |
 
 Response:
 
@@ -305,6 +307,7 @@ CHUNK_OVERLAP_TOKENS=100
 DENSE_TOP_K=50
 SPARSE_TOP_K=50
 RERANK_TOP_N=30
+RERANK_TIMEOUT_MS=800
 CONTEXT_TOP_K=6
 MAX_CONTEXT_TOKENS=3500
 
@@ -525,3 +528,19 @@ eval định kỳ trên golden set thật, và runbook vận hành.
 Chưa nên dùng cho quyết định pháp lý/tài chính/y tế quan trọng nếu chưa có
 human review, audit trail đầy đủ và threshold quality được kiểm chứng.
 ```
+
+## 14. Nguồn kỹ thuật đã xác minh
+
+Các API trong Day 40 được đối chiếu bằng Context7 ngày 2026-06-08:
+
+- [Qdrant Python Client](https://github.com/qdrant/qdrant-client): `AsyncQdrantClient.create_collection`, `upsert`, `query_points`, payload filter, named dense/sparse vectors, `Prefetch` và `FusionQuery(Fusion.RRF)`.
+- [Pydantic Settings](https://github.com/pydantic/pydantic-settings/blob/main/docs/index.md): `BaseSettings` với `SettingsConfigDict(env_file=".env", extra="ignore")`.
+- [Sentence Transformers](https://github.com/huggingface/sentence-transformers): `SentenceTransformer.encode(...)`, normalized embeddings và `CrossEncoder` reranking.
+- [Cohere Python SDK reference](https://github.com/cohere-ai/cohere-python/blob/main/reference.md): managed rerank qua V2 endpoint.
+- [RAGAS migration v0.3 -> v0.4](https://github.com/vibrantlabsai/ragas/blob/main/docs/howtos/migrations/migrate_from_v03_to_v04.md): lưu ý version cho eval workflow.
+
+Dependency policy:
+
+- Pin package versions và container image versions trong lockfile/Compose dùng để release.
+- Chạy integration test với Qdrant thật cho filter `tenant_id`, `acl_roles`, `deleted`, `index_version`.
+- Khi upgrade Qdrant client, RAGAS, Cohere hoặc Sentence Transformers, chạy lại smoke eval, ACL tests và latency benchmark trước rollout.

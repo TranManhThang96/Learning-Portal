@@ -1,4 +1,6 @@
-# Tài Liệu Chi Tiết: Training Loop, Optimizer, Scheduler
+# Day 11 Reference: Training Loop, Optimizer Và Scheduler
+
+File này là tài liệu tra cứu nhanh sau khi đã học đầy đủ trong `lession.md`. Nội dung được giữ theo từng chủ đề để review API, trade-off, failure mode và production checklist; người học không cần đọc file này theo thứ tự để hiểu bài.
 
 ## 1. Vì sao Day 11 quan trọng?
 
@@ -380,7 +382,7 @@ Mixed precision dùng dtype thấp hơn như FP16 hoặc BF16 cho một số ph�
 Pattern CUDA AMP hiện đại:
 
 ```python
-scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
+scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
 for xb, yb in train_loader:
     optimizer.zero_grad(set_to_none=True)
@@ -584,3 +586,10 @@ Nếu thiếu các điều kiện này, training loop vẫn có giá trị học
 - Dùng AMP sau khi FP32 chạy đúng và có benchmark.
 - Save best checkpoint theo validation metric.
 - Log đủ để debug, reproduce và so sánh run.
+
+## 16. Nguồn API
+
+- PyTorch 2.12 docs qua Context7: `/websites/pytorch_2_12`.
+- [Automatic Mixed Precision examples](https://docs.pytorch.org/docs/2.12/notes/amp_examples.html).
+- [Optimizer và scheduler](https://docs.pytorch.org/docs/2.12/optim.html).
+- [Gradient clipping](https://docs.pytorch.org/docs/2.12/generated/torch.nn.utils.clip_grad_norm_.html).

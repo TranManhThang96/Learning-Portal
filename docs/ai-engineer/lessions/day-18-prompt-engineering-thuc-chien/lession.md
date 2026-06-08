@@ -218,6 +218,41 @@ Validation cần kiểm:
 - Không chứa secret hoặc nội dung bị cấm.
 - Citation/evidence có tồn tại trong source nếu task yêu cầu grounded answer.
 
+Khi provider hỗ trợ schema-native structured outputs, ưu tiên truyền schema qua API thay vì chỉ chép schema vào prompt. Ví dụ với OpenAI Responses API hiện hành, schema nằm dưới `text.format`:
+
+```python
+import os
+
+from openai import OpenAI
+
+client = OpenAI()
+response = client.responses.create(
+    model=os.environ["OPENAI_MODEL"],
+    input="Phân loại ticket: Tôi bị trừ tiền hai lần.",
+    text={
+        "format": {
+            "type": "json_schema",
+            "name": "ticket_classification",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string",
+                        "enum": ["billing", "technical", "account", "other"],
+                    },
+                    "needs_human_review": {"type": "boolean"},
+                },
+                "required": ["label", "needs_human_review"],
+                "additionalProperties": False,
+            },
+        }
+    },
+)
+```
+
+Schema adherence không đồng nghĩa business correctness. Application vẫn phải xử lý refusal/incomplete response, kiểm tra semantic rule và chạy golden set.
+
 Day 19 sẽ đi sâu hơn vào JSON Schema, function calling, output parser và retry khi sai schema.
 
 ## 7. Prompt Library Cho 5 Use Case
@@ -241,6 +276,61 @@ prompt_library/
 | Data extraction | field JSON có `null` khi thiếu | JSON validity, field-level precision/recall/F1 |
 | Code review | danh sách finding có severity/file/line | true positive bugs, false positive rate, severity calibration |
 | Customer support | answer + escalation decision | policy compliance, escalation accuracy, unsafe answer rate |
+
+### 7.1 Summarization
+
+Thiết kế theo thứ tự:
+
+1. Chốt audience và mục đích của summary.
+2. Giới hạn source, độ dài và các fact bắt buộc phải giữ.
+3. Tách `summary`, `key_points`, `risks`, `missing_info`.
+4. Đánh giá factuality và coverage, không chỉ đánh giá câu văn hay.
+
+Best solution: với tài liệu dài, chunk theo section rồi merge có kiểm soát; không cắt text theo số ký tự tùy ý.
+
+### 7.2 Classification
+
+Thiết kế theo thứ tự:
+
+1. Định nghĩa label bằng business rule và ví dụ biên.
+2. Có label `unknown` hoặc `needs_human_review` khi thiếu dữ kiện.
+3. Dùng enum và output ngắn.
+4. Đo macro F1/confusion matrix; đừng dùng confidence do model tự khai như xác suất đã calibration.
+
+Best solution: nếu task ổn định và có nhiều labeled data, benchmark classifier truyền thống hoặc model nhỏ trước LLM.
+
+### 7.3 Data Extraction
+
+Thiết kế theo thứ tự:
+
+1. Field thiếu phải là `null`, không buộc model đoán.
+2. Chuẩn hóa date, currency và unit trong schema.
+3. Validate range/reconciliation bằng code.
+4. Route human review khi OCR/source mờ hoặc field quan trọng mâu thuẫn.
+
+Best solution: dùng provider structured output khi có; Pydantic/JSON Schema vẫn là contract trong application.
+
+### 7.4 Code Review
+
+Thiết kế theo thứ tự:
+
+1. Chỉ đưa diff và context cần thiết, tránh gửi cả repository không kiểm soát.
+2. Định nghĩa finding hợp lệ: bug, security, regression, missing test, performance.
+3. Yêu cầu file/line/evidence và cho phép `findings=[]`.
+4. Đo precision và false-positive rate; output dài không có nghĩa review tốt.
+
+Best solution: LLM là reviewer bổ sung. CI, static analysis, tests và code owner vẫn là gate chính.
+
+### 7.5 Customer Support
+
+Thiết kế theo thứ tự:
+
+1. Retrieve đúng policy version và permission scope.
+2. Tách answer cho user khỏi escalation/action proposal.
+3. Không hứa refund, xóa account hoặc thay đổi billing nếu chưa qua policy/human approval.
+4. Đo policy compliance, escalation false negative và unsafe answer rate.
+
+Best solution: LLM soạn câu trả lời; deterministic policy engine quyết định action có side effect.
 
 Với mỗi prompt, hãy lưu:
 

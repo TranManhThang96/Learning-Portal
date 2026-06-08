@@ -202,11 +202,35 @@ Không nên là lựa chọn đầu tiên cho team app engineering. Với phần
 
 PEFT là họ kỹ thuật fine-tuning chỉ update một phần nhỏ parameter. LoRA là biến thể phổ biến: thêm low-rank matrices vào các layer attention/MLP, train các matrices này, giữ base model cố định. QLoRA tiết kiệm VRAM hơn bằng cách quantize base model, rồi train LoRA adapter.
 
+Hiểu đúng QLoRA:
+
+```text
+Base model weights -> load ở dạng quantized để giảm memory
+LoRA adapter       -> parameter nhỏ, vẫn là phần được train
+Optimizer state    -> chỉ theo dõi trainable adapter parameters
+Output artifact    -> adapter nhỏ + reference tới đúng base model/tokenizer
+```
+
+QLoRA không có nghĩa là mọi phép toán training đều trở thành số nguyên 4-bit.
+Compute dtype, quantization config, target modules và hardware support vẫn ảnh
+hưởng stability, tốc độ và chất lượng. Luôn log trainable parameter count và
+so sánh với baseline trước khi train dài.
+
 Decision thực tế:
 
 - Có GPU hạn chế, muốn thử nhanh: QLoRA.
 - Có runtime cần merge adapter vào base model để inference đơn giản: LoRA rồi merge nếu quality không giảm.
 - Có nhiều tenant/domain riêng: giữ nhiều adapter và route theo tenant/domain, nhưng phải kiểm soát memory và cold start.
+
+Trade-off khi deploy:
+
+- Giữ adapter riêng: artifact nhỏ, đổi adapter nhanh, nhưng runtime phải load đúng
+  base model + adapter và quản lý routing/version compatibility.
+- `merge_and_unload`: serving đơn giản hơn và có thể giảm adapter overhead, nhưng
+  artifact lớn hơn, mất khả năng switch adapter tức thì và cần regression test
+  lại sau merge/quantize.
+- Nhiều adapter trên một base model giúp reuse weights, nhưng phải kiểm soát adapter
+  nào đang active; route sai adapter là một lỗi correctness/privacy.
 
 ### Adapter Và Prompt Tuning
 
@@ -447,3 +471,5 @@ Hybrid RAG + fine-tune dùng được trong production khi team đủ vận hàn
 - [ ] Có decision matrix cho ít nhất 5 use case.
 - [ ] Có golden metrics trước khi đề xuất fine-tune.
 - [ ] Có production notes về dataset, privacy, eval, rollback, cost và latency.
+- [ ] Phân biệt được quantized base weights với trainable LoRA adapters trong QLoRA.
+- [ ] Có quyết định rõ giữ adapter riêng hay merge khi deploy.

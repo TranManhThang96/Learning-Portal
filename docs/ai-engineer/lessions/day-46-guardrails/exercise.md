@@ -47,9 +47,9 @@ class RedactionResult:
 
 
 PATTERNS = {
-    "EMAIL": re.compile(r"\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"),
-    "PHONE": re.compile(r"(?<!\\d)(?:\\+84|0)(?:\\d[ .-]?){8,10}\\d(?!\\d)"),
-    "TOKEN": re.compile(r"(?i)\\b(?:api[_-]?key|token|secret)\\s*[:=]\\s*['\\\"]?[A-Za-z0-9_\\-]{16,}"),
+    "EMAIL": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    "PHONE": re.compile(r"(?<!\d)(?:\+84|0)(?:[ .-]?\d){9}(?!\d)"),
+    "TOKEN": re.compile(r"(?i)\b(?:api[_-]?key|token|secret)\s*[:=]\s*['\"]?[A-Za-z0-9_-]{16,}"),
 }
 
 
@@ -66,9 +66,13 @@ def redact_text(text: str) -> RedactionResult:
 Test cases:
 
 - Email cá nhân.
-- Số điện thoại Việt Nam.
+- Số điện thoại Việt Nam dạng `0912345678`, `091 234 5678`, `+84912345678`.
 - API token giả.
 - Text bình thường không bị thay đổi.
+- Chuỗi 8 hoặc 11 chữ số không bị nhận nhầm là số điện thoại chuẩn của bài.
+
+Regex là baseline, không phải PII detector hoàn chỉnh. Ghi lại false positive và
+false negative bạn phát hiện để quyết định có cần Presidio/custom recognizer hay không.
 
 ## Bài Tập 3: Validate RAG Response
 
@@ -76,10 +80,12 @@ Tạo module `guardrails/schema.py`:
 
 ```python
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_id: str = Field(min_length=2, max_length=20)
     doc_id: str = Field(min_length=1)
     chunk_id: str = Field(min_length=1)
@@ -87,16 +93,22 @@ class Citation(BaseModel):
 
 
 class RagAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     answer: str = Field(min_length=1, max_length=4000)
     citations: list[Citation] = Field(default_factory=list, max_length=8)
     confidence: Literal["low", "medium", "high"]
+    policy_action: Literal["allow", "refuse", "escalate"]
     needs_escalation: bool = False
 
     @model_validator(mode="after")
-    def require_citations_for_answer(self) -> "RagAnswer":
-        is_refusal = "không đủ thông tin" in self.answer.lower()
-        if not is_refusal and not self.citations:
-            raise ValueError("Answer must include citations unless it is a refusal")
+    def enforce_policy_contract(self) -> "RagAnswer":
+        if self.policy_action == "allow" and not self.citations:
+            raise ValueError("Allowed answer must include citations")
+        if self.policy_action == "refuse" and self.citations:
+            raise ValueError("Refusal must not include citations")
+        if self.policy_action == "escalate" and not self.needs_escalation:
+            raise ValueError("Escalation must set needs_escalation=true")
         return self
 
 
@@ -112,8 +124,10 @@ Acceptance criteria:
 
 - JSON thiếu `confidence` phải fail.
 - Citation trỏ ra ngoài context phải fail.
-- Answer không refusal mà không có citation phải fail.
-- Refusal "Không đủ thông tin..." được phép không có citation.
+- `policy_action="allow"` mà không có citation phải fail.
+- `policy_action="refuse"` được phép không có citation và phải fail nếu vẫn gắn citation.
+- `policy_action="escalate"` phải đặt `needs_escalation=true`.
+- Field lạ phải fail thay vì bị bỏ qua im lặng.
 
 ## Bài Tập 4: Filter Context Theo ACL
 
@@ -170,6 +184,13 @@ validate request
   -> redact logs
   -> return answer
 ```
+
+Thêm integration tests cho bốn đường:
+
+1. Normal query -> `allow` + citation hợp lệ.
+2. Empty context -> `refuse` + không citation.
+3. Citation ngoài `allowed_chunk_ids` -> retry một lần rồi fail safe.
+4. High-impact + low confidence -> `escalate`.
 
 ## Checklist Nộp Bài
 

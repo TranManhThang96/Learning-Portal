@@ -105,6 +105,18 @@ Các lỗi data thường gặp:
 - Review chứa PII, số điện thoại, địa chỉ hoặc mã đơn hàng.
 - Dữ liệu test không cùng distribution với production traffic.
 
+Nếu nhiều dòng được sinh từ cùng review gốc, cùng conversation hoặc cùng customer, hãy thêm `group_id` và split theo group. Mọi biến thể của một câu gốc phải nằm trọn trong một split. Random split từng dòng không đủ vì model có thể đã thấy gần như cùng một câu trong train rồi gặp lại ở test.
+
+```text
+review gốc A
+  -> A nguyên bản
+  -> A thêm prefix
+  -> A thêm suffix
+
+Sai:  A1 train, A2 validation, A3 test
+Đúng: A1, A2, A3 cùng thuộc train hoặc cùng thuộc validation/test
+```
+
 ## 4. Vì Sao Phải Có Baseline
 
 Baseline `TF-IDF + Logistic Regression` là bắt buộc, không phải bước phụ.
@@ -327,7 +339,7 @@ Có, sentiment classifier kiểu này dùng được trong production nếu th�
 
 1. Dataset đại diện domain thật, đủ size và có label guideline rõ.
 2. Có baseline và Transformer được so sánh trên cùng train/validation/test split.
-3. Test set không bị leakage và có metric theo từng class, đặc biệt là `negative`.
+3. Test set không bị leakage; duplicate/variant cùng nguồn được split theo group và có metric theo từng class, đặc biệt là `negative`.
 4. Artifact lưu đầy đủ model, tokenizer, label mapping, preprocessing config, metric và manifest.
 5. API load model một lần, validate input, có timeout, health/readiness và logging không lộ PII.
 6. Đã benchmark p95/p99 latency, memory và throughput trên hardware deploy thật.

@@ -25,6 +25,7 @@ Chọn một model từ Model Hub, ví dụ:
 | Mục | Câu trả lời |
 |---|---|
 | Model ID |  |
+| Revision/commit SHA |  |
 | License |  |
 | Intended use |  |
 | Limitations |  |
@@ -76,14 +77,18 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 model_id = "distilbert-base-uncased-finetuned-sst-2-english"
+revision = "main"  # Demo only; production thay bằng commit SHA.
 texts = [
     "This product is useful and reliable.",
     "The delivery was late and the support was terrible.",
 ]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForSequenceClassification.from_pretrained(model_id).to(device)
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_id,
+    revision=revision,
+).to(device)
 model.eval()
 
 encoded = tokenizer(
@@ -154,7 +159,8 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 
 model_id = "distilbert-base-multilingual-cased"
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+revision = "main"  # Demo only; production thay bằng commit SHA.
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 labels = ["negative", "neutral", "positive"]
 label2id = {label: idx for idx, label in enumerate(labels)}
 
@@ -201,13 +207,15 @@ from transformers import (
 )
 
 model_id = "distilbert-base-multilingual-cased"
+revision = "main"  # Demo only; production thay bằng commit SHA.
 labels = ["negative", "neutral", "positive"]
 label2id = {label: idx for idx, label in enumerate(labels)}
 id2label = {idx: label for label, idx in label2id.items()}
 
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
 model = AutoModelForSequenceClassification.from_pretrained(
     model_id,
+    revision=revision,
     num_labels=len(labels),
     label2id=label2id,
     id2label=id2label,
