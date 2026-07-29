@@ -8,6 +8,7 @@ import { messageBrokerSidebar } from "./sidebars/message-broker";
 import { devopsSidebar } from "./sidebars/devops";
 import { terraformAnsibleArgoCDSidebar } from "./sidebars/terraform-ansible-argoCD";
 import { gatewayLbNginxSidebar } from "./sidebars/gateway-lb-nginx";
+import { redisSidebar } from "./sidebars/redis";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -89,26 +90,7 @@ export default defineConfig({
       "/gateway-lb-nginx/": gatewayLbNginxSidebar,
       "/devops/": devopsSidebar,
       "/terraform-ansible-argoCD/": terraformAnsibleArgoCDSidebar,
-      "/redis/": [
-        {
-          text: "Redis Learning Plan",
-          items: [
-            { text: "Overview", link: "/redis/" },
-            {
-              text: "Lộ trình 30 ngày",
-              link: "/redis/redis-learning-plan/README.md",
-            },
-            {
-              text: "Day 01 - Architecture",
-              link: "/redis/redis-learning-plan/day-01-redis-architecture-and-use-cases/lesson.md",
-            },
-            {
-              text: "Document Day 01",
-              link: "/redis/redis-learning-plan/day-01-redis-architecture-and-use-cases/document.md",
-            },
-          ],
-        },
-      ],
+      "/redis/": redisSidebar,
     },
     search: {
       provider: "local",
