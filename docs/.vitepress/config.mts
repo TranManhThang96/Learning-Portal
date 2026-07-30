@@ -9,6 +9,7 @@ import { devopsSidebar } from "./sidebars/devops";
 import { terraformAnsibleArgoCDSidebar } from "./sidebars/terraform-ansible-argoCD";
 import { gatewayLbNginxSidebar } from "./sidebars/gateway-lb-nginx";
 import { redisSidebar } from "./sidebars/redis";
+import { kubernetesSidebar } from "./sidebars/kubernetes";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -51,6 +52,7 @@ export default defineConfig({
           { text: "ELK Stack", link: "/elasticsearch-logstash-kibana/" },
           { text: "Nginx & Gateway", link: "/gateway-lb-nginx/" },
           { text: "IaC", link: "/terraform-ansible-argoCD/" },
+          { text: "Kubernetes (7 ngày)", link: "/learn-fast/kubernetes/" },
         ],
       },
       {
@@ -91,6 +93,7 @@ export default defineConfig({
       "/devops/": devopsSidebar,
       "/terraform-ansible-argoCD/": terraformAnsibleArgoCDSidebar,
       "/redis/": redisSidebar,
+      "/learn-fast/kubernetes/": kubernetesSidebar,
     },
     search: {
       provider: "local",
