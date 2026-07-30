@@ -362,6 +362,18 @@ Owner:
 
 ## 13. Tài Liệu Tham Khảo
 
-- OWASP Top 10 for LLM Applications 2025: Prompt Injection, Sensitive Information Disclosure, Improper Output Handling, Excessive Agency, System Prompt Leakage, Vector and Embedding Weaknesses, Unbounded Consumption.
-- NIST AI RMF: Govern, Map, Measure, Manage.
-- NCSC prompt injection guidance: thiết kế hệ thống để giới hạn hậu quả khi model bị điều khiển bởi instruction độc hại.
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/):
+  Prompt Injection, Sensitive Information Disclosure, Supply Chain, Data and
+  Model Poisoning, Improper Output Handling, Excessive Agency, System Prompt
+  Leakage, Vector and Embedding Weaknesses, Misinformation, Unbounded Consumption.
+- Scope của Day 23 là security boundary cho LLM app có tool/RAG. Vì vậy checklist trong bài cover sâu Prompt Injection, Sensitive Information Disclosure, Improper Output Handling, Excessive Agency, System Prompt Leakage, Vector/Embedding Weaknesses và Unbounded Consumption. Với Supply Chain, Data/Model Poisoning và Misinformation, hãy thêm checklist riêng khi bạn đưa dependency/model/index/training data vào production.
+- [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
+  reference bổ sung cho agent có goal, tool, identity, memory và nhiều bước.
+- [NIST AI RMF 1.0](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-ai-rmf-10):
+  Govern, Map, Measure, Manage.
+- [NCSC prompt injection guidance](https://www.ncsc.gov.uk/blog-post/prompt-injection-is-not-sql-injection):
+  thiết kế hệ thống để giới hạn hậu quả khi model bị điều khiển bởi instruction độc hại.
+- [NCSC secure AI system development](https://www.ncsc.gov.uk/collection/guidelines-secure-ai-system-development/):
+  secure-by-design trong toàn bộ lifecycle.
+
+Đối chiếu ngày 2026-06-08.

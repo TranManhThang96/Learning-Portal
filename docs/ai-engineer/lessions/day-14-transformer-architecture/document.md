@@ -1,4 +1,4 @@
-# Day 14 Document: Transformer Architecture Notes
+# Day 14 Reference: Transformer Architecture Decision Guide
 
 File này dùng như tài liệu tra cứu nhanh sau khi đã đọc `lession.md`.
 
@@ -315,9 +315,9 @@ RAG tốt + context vừa đủ thường production-friendly hơn long context 
 
 ## 14. Tài liệu nên đọc
 
-- "Attention Is All You Need": đọc architecture, scaled dot-product attention, multi-head attention, positional encoding và encoder-decoder stack.
-- "The Illustrated Transformer": đọc để hình dung luồng dữ liệu.
-- "The Annotated Transformer": đọc nếu muốn mapping công thức sang code.
+- [Attention Is All You Need](https://arxiv.org/abs/1706.03762): architecture, scaled dot-product attention, multi-head attention, positional encoding và encoder-decoder stack.
+- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/): hình dung luồng dữ liệu.
+- [The Annotated Transformer](https://nlp.seas.harvard.edu/annotated-transformer/): mapping công thức sang code.
 - Model cards của BERT/PhoBERT/LLaMA/Qwen/T5 trước khi dùng trong dự án thật.
 
 Khi đọc, không chỉ hỏi "model có mạnh không". Hãy hỏi:

@@ -21,11 +21,12 @@ Hoàn thành bài tập khi bạn có:
 
 - [ ] MLflow Tracking UI chạy local.
 - [ ] Ít nhất 3 runs trong cùng experiment.
-- [ ] Mỗi run log params, metrics, artifacts, dataset metadata và code commit.
-- [ ] Có artifact `classification_report.json` hoặc eval report tương đương.
+- [ ] Mỗi run log params, validation metrics, artifacts, dataset metadata và code commit.
+- [ ] Có artifact `validation_classification_report.json` hoặc eval report tương đương.
 - [ ] Có model signature và input example.
 - [ ] Có registered model, ví dụ `sentiment-classifier`.
-- [ ] Có alias `candidate` cho version qua release gate.
+- [ ] Có alias `candidate` cho version được chọn bằng validation.
+- [ ] Candidate có holdout test report và tag `holdout_test_status=passed`.
 - [ ] Có alias `champion` sau khi promote.
 - [ ] Có decision note trả lời production readiness.
 - [ ] Có rollback plan rõ version và command.
@@ -66,7 +67,7 @@ mlflow server \
 
 ## 2. Tạo dataset tối thiểu
 
-Dataset cần ít nhất 20 dòng, có cột `text` và `label`.
+Dataset cần ít nhất 30 dòng, có cột `text` và `label`. Với bài 3 lớp, mỗi class nên có ít nhất 5 dòng; dataset thật cần lớn hơn nhiều để metric ổn định.
 
 Ví dụ format:
 
@@ -100,14 +101,14 @@ Params:
 
 Metrics:
 
-- `accuracy`
-- `macro_f1`
-- `weighted_f1`
-- `p95_latency_ms`
+- `val_accuracy`
+- `val_macro_f1`
+- `val_weighted_f1`
+- `val_p95_latency_ms`
 
 Artifacts:
 
-- `classification_report.json`
+- `validation_classification_report.json`
 - `eval_summary.json`
 - `model_card.md`
 - optional: `confusion_matrix.png`
@@ -123,7 +124,7 @@ Dataset:
 
 - `mlflow.data.from_pandas(...)`
 - `mlflow.log_input(..., context="training")`
-- `mlflow.log_input(..., context="evaluation")`
+- `mlflow.log_input(..., context="validation")`
 
 ## 4. Chạy 3 runs
 
@@ -152,9 +153,9 @@ python train_day41.py \
 
 Trong MLflow UI, so sánh:
 
-- `macro_f1`
-- per-class recall trong `classification_report.json`
-- `p95_latency_ms`
+- `val_macro_f1`
+- per-class recall trong `validation_classification_report.json`
+- `val_p95_latency_ms`
 - dataset hash có giống nhau không
 - git commit có giống hoặc được ghi rõ không
 
@@ -166,9 +167,9 @@ Quy tắc gợi ý:
 
 ```text
 Candidate được chọn nếu:
-- macro_f1 cao nhất hoặc tốt hơn champion hiện tại ít nhất 1 điểm phần trăm.
+- val_macro_f1 cao nhất hoặc tốt hơn champion hiện tại ít nhất 1 điểm phần trăm.
 - Không class quan trọng nào có recall quá thấp.
-- p95_latency_ms không vượt 30 ms với batch nhỏ local.
+- val_p95_latency_ms không vượt 30 ms với batch nhỏ local.
 - Artifact đầy đủ và không chứa PII.
 - Có dataset_hash và git_commit.
 ```
@@ -208,11 +209,11 @@ Promote/Không promote.
 - Rollback command:
 ```
 
-## 6. Register và promote
+## 6. Register, chọn candidate và chạy holdout test
 
 Nếu code dùng `registered_model_name` trong `mlflow.sklearn.log_model`, model version sẽ được register tự động.
 
-Gắn alias `candidate` cho version qua gate:
+Sau khi so sánh đủ 3 runs trên cùng validation split, gắn alias `candidate` cho đúng một version. Không đặt alias tự động trong từng training run vì run cuối có thể ghi đè candidate tốt hơn.
 
 ```python
 from mlflow import MlflowClient
@@ -225,13 +226,30 @@ client.set_registered_model_alias(
 )
 ```
 
-Promote thành `champion` sau khi review:
+Tiếp theo, chạy candidate đúng một lần trên holdout test chưa dùng để tune hyperparameter. Log `holdout_test_report.json`; nếu đạt release gate, gắn tag:
+
+```python
+client.set_model_version_tag(
+    name="sentiment-classifier",
+    version="1",
+    key="holdout_test_status",
+    value="passed",
+)
+```
+
+Tag chỉ được gắn sau khi release-evaluation run đã log model version, holdout dataset version/hash, test metrics và report. Nộp cả release-evaluation run ID; không tự gắn `passed` để bỏ qua bước test.
+
+Promote thành `champion` sau khi validation gate, holdout test và human review đều đạt:
 
 ```python
 from mlflow import MlflowClient
 
 client = MlflowClient()
 candidate = client.get_model_version_by_alias("sentiment-classifier", "candidate")
+if candidate.tags.get("validation_gate") != "passed":
+    raise RuntimeError("Candidate chưa qua validation gate")
+if candidate.tags.get("holdout_test_status") != "passed":
+    raise RuntimeError("Candidate chưa qua holdout test")
 client.set_registered_model_alias(
     name="sentiment-classifier",
     alias="champion",
@@ -323,7 +341,7 @@ Trả lời trong README hoặc `decision-note.md`:
 1. Dùng workflow này được trong production không? Nếu có thì cần điều kiện gì?
 2. Nếu MLflow server mất dữ liệu, model đang chạy có bị ảnh hưởng không? Vì sao?
 3. Vì sao không nên dùng test set để chọn hyperparameters?
-4. Nếu run tốt nhất có `macro_f1` cao hơn nhưng latency gấp 5 lần, bạn có promote không?
+4. Nếu run tốt nhất có `val_macro_f1` cao hơn nhưng latency gấp 5 lần, bạn có promote không?
 5. Nếu artifact có sample prediction chứa email khách hàng, bạn xử lý thế nào?
 6. Rollback bằng alias khác gì rollback bằng retrain?
 7. Với RAG, bạn sẽ log thêm những version nào ngoài LLM model?
@@ -360,7 +378,8 @@ Nộp các bằng chứng:
 - Run ID của best run.
 - Registered model name và version.
 - Alias hiện tại của `candidate` và `champion`.
-- `classification_report.json`.
+- `validation_classification_report.json`.
+- `holdout_test_report.json`.
 - `model_card.md`.
 - `decision-note.md`.
 - Rollback command đã test.

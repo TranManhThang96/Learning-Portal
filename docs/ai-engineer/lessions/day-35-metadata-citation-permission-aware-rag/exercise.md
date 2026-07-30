@@ -160,7 +160,12 @@ Text: Nhân viên full-time có 12 ngày nghỉ phép năm.
 Viết function:
 
 ```python
-def validate_citations(answer: str, source_map: dict, user: UserContext) -> list[str]:
+def validate_citations(
+    answer: str,
+    source_map: dict,
+    user: UserContext,
+    chunk_lookup: dict[str, Chunk],
+) -> list[str]:
     ...
 ```
 
@@ -170,6 +175,8 @@ Validator cần bắt được:
 - Answer không có citation nào dù có factual claim.
 - Citation trỏ tới chunk không còn visible với user.
 - Citation trỏ tới chunk đã tombstone.
+
+`source_map` một mình không đủ để re-check quyền. Validator phải lookup chunk/document hiện tại bằng `chunk_id`, hoặc gọi authorization repository/service tương đương.
 
 Test case bắt buộc:
 

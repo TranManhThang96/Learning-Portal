@@ -25,7 +25,7 @@ Thời lượng đề xuất:
 
 Hoàn thành bài tập khi bạn có:
 
-- [ ] `POST /query` reject request sai schema bằng `422`.
+- [ ] `POST /query` reject request sai schema bằng `422 VALIDATION_ERROR` theo cùng error contract.
 - [ ] `POST /query` trả `answer`, `citations`, `trace_id`, `latency_ms`, `model_version`, `finish_reason`.
 - [ ] `GET /query/stream` trả event `meta`, nhiều event `token`, và event `done`.
 - [ ] Timeout trả error contract có code `MODEL_TIMEOUT` hoặc `STREAM_TIMEOUT`.
@@ -75,14 +75,11 @@ dependencies = [
   "uvicorn[standard]",
   "httpx",
   "pydantic",
+  "pydantic-settings",
 ]
 ```
 
-Nếu dùng config từ env, thêm:
-
-```toml
-"pydantic-settings"
-```
+`pydantic-settings` dùng để đọc và validate config từ environment variables.
 
 Chạy local:
 
@@ -237,11 +234,13 @@ Tạo `app/main.py`. Bạn có thể dùng code trong `lession.md` làm baseline
 - `lifespan` load runtime một lần.
 - Middleware tạo `trace_id` và trả header `x-trace-id`.
 - Exception handler trả error contract.
+- Override `RequestValidationError` để lỗi `422` cũng trả `code`, `message`, `trace_id`, `retryable`.
 - `/health` không gọi dependency nặng.
 - `/ready` kiểm tra runtime loaded.
 - `/query` bọc runtime call bằng timeout.
 - `/query/stream` trả `StreamingResponse` với `text/event-stream`.
 - Streaming generator release semaphore trong `finally`.
+- SSE client coi `done` hoặc `error` là terminal event; không chỉ dựa vào HTTP status.
 
 Checklist code:
 
@@ -383,6 +382,7 @@ Acceptance:
 - [ ] Nhìn thấy nhiều `event: token`.
 - [ ] Nhìn thấy `event: done`.
 - [ ] Nếu giảm timeout rất thấp, nhìn thấy `event: error`.
+- [ ] Client fail test nếu stream kết thúc mà không có `done` hoặc `error`.
 
 ## 10. Test timeout
 
@@ -442,7 +442,6 @@ for i in 1 2 3; do
   curl -s -o /dev/null -w "%{http_code}\n" \
     -X POST http://localhost:8000/query \
     -H 'content-type: application/json' \
-    -H 'x-api-key: same-client' \
     -d '{"question":"rate test","tenant_id":"demo"}'
 done
 ```
@@ -454,6 +453,8 @@ Kỳ vọng:
 200
 429
 ```
+
+Trong lab chưa có auth, limiter fallback theo client IP. Production phải dùng principal/tenant đã được auth middleware hoặc gateway xác thực; không dùng `tenant_id` trong body hay API key chưa validate làm identity.
 
 ## 12. Test concurrency limit
 

@@ -157,6 +157,7 @@ from starlette.responses import Response
 
 REQUESTS = Counter("rag_request_total", "Total RAG requests", ["route", "status"])
 STAGE_LATENCY = Histogram("rag_stage_latency_seconds", "Latency by stage", ["stage"])
+REQUEST_LATENCY = Histogram("rag_request_latency_seconds", "End-to-end latency", ["route"])
 TOKENS = Counter("llm_token_total", "LLM token usage", ["model", "type"])
 COST = Counter("llm_cost_usd_total", "LLM cost in USD", ["model"])
 IN_FLIGHT = Gauge("rag_requests_in_flight", "Requests in flight", ["route"])
@@ -172,6 +173,7 @@ Ghi metrics:
 ```python
 REQUESTS.labels(route="/query", status="success").inc()
 STAGE_LATENCY.labels(stage="retrieval").observe(latency_ms["retrieval"] / 1000)
+REQUEST_LATENCY.labels(route="/query").observe(total_latency_ms / 1000)
 TOKENS.labels(model=model, type="input").inc(input_tokens)
 TOKENS.labels(model=model, type="output").inc(output_tokens)
 COST.labels(model=model).inc(float(cost_usd))
@@ -210,6 +212,8 @@ Yêu cầu:
 - [ ] Lưu `estimated_cost_usd`.
 - [ ] Lưu `pricing_table_version` nếu pricing có thể đổi.
 - [ ] Nếu provider không trả usage, ghi rõ `usage_source="estimated"`.
+
+Các con số trong snippet là fixture để học cách tính, không phải cam kết giá hiện hành. Production phải đọc pricing từ config có `pricing_table_version` và `effective_at`, rồi đối soát với billing provider.
 
 ## 7. Bước 6: Đo TTFT
 
@@ -273,6 +277,7 @@ trace_record = {
         "ttft_ms": ttft_ms,
         "latency_ms": latency_ms["generation"],
         "estimated_cost_usd": str(cost_usd),
+        "pricing_table_version": pricing_table_version,
     },
     "validation": {
         "citation_valid": citation_valid,
@@ -496,7 +501,7 @@ Tổng: 100 điểm.
 
 ## 15. Lỗi Thường Gặp
 
-- Chỉ log final answer, không log retrieved chunks.
+- Chỉ log final answer, không log metadata của retrieved chunks. Cách đúng là log `chunk_id`, `document_id`, score, version, hash/length và redaction status; không log raw chunk content nếu chưa có policy rõ.
 - Không có prompt/model/index version trong trace.
 - Lưu raw query/context/output mà không redact.
 - Dùng `trace_id` làm Prometheus label.
@@ -513,7 +518,7 @@ Nộp các phần sau:
 
 1. Link hoặc screenshot `/metrics`.
 2. 3-5 log events mẫu đã redact.
-3. 1 trace JSON hoàn chỉnh.
+3. 1 trace JSON hoàn chỉnh nhưng đã redact hoặc chỉ chứa hash/metadata cho nội dung nhạy cảm.
 4. Report 30 golden queries.
 5. Top 5 slowest queries.
 6. Top 5 highest-cost queries.

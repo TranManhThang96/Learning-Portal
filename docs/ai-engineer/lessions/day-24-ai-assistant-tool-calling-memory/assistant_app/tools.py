@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from hashlib import sha256
+from threading import RLock
 from typing import Any
 from uuid import uuid4
 
@@ -30,8 +33,8 @@ KNOWLEDGE_BASE = [
 
 @dataclass
 class ToolExecutor:
-    tickets_by_idempotency_key: dict[str, dict[str, Any]] = field(default_factory=dict)
-    max_tool_calls: int = 3
+    tickets_by_idempotency_key: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    _lock: RLock = field(default_factory=RLock, init=False, repr=False)
 
     def run(self, name: str, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         if name == "search_kb":
@@ -44,7 +47,11 @@ class ToolExecutor:
         try:
             parsed = SearchKbArgs.model_validate(args)
         except ValidationError as exc:
-            return {"tool": "search_kb", "status": "error", "error": exc.errors()}
+            return {
+                "tool": "search_kb",
+                "status": "error",
+                "error": _safe_validation_errors(exc),
+            }
 
         query_terms = set(parsed.query.lower().split())
         scored = []
@@ -61,24 +68,62 @@ class ToolExecutor:
         try:
             parsed = CreateTicketArgs.model_validate(args)
         except ValidationError as exc:
-            return {"tool": "create_ticket", "status": "error", "error": exc.errors()}
+            return {
+                "tool": "create_ticket",
+                "status": "error",
+                "error": _safe_validation_errors(exc),
+            }
 
-        if not parsed.user_confirmed:
+        if "create_ticket" not in context.confirmed_actions:
             return {"tool": "create_ticket", "status": "error", "error": "confirmation_required"}
         if not context.idempotency_key:
             return {"tool": "create_ticket", "status": "error", "error": "idempotency_key_required"}
 
-        existing = self.tickets_by_idempotency_key.get(context.idempotency_key)
-        if existing:
-            return {"tool": "create_ticket", "status": "ok", **existing, "idempotent_replay": True}
+        key = (context.user_id, context.idempotency_key)
+        fingerprint = sha256(
+            json.dumps(parsed.model_dump(), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
-        ticket = {
-            "ticket_id": f"tick_{uuid4().hex[:10]}",
-            "ticket_status": "created",
-            "user_id": context.user_id,
-            "title": parsed.title,
-            "summary": parsed.summary,
-            "priority": parsed.priority,
-        }
-        self.tickets_by_idempotency_key[context.idempotency_key] = ticket
-        return {"tool": "create_ticket", "status": "ok", **ticket, "idempotent_replay": False}
+        with self._lock:
+            existing = self.tickets_by_idempotency_key.get(key)
+            if existing:
+                if existing["_request_fingerprint"] != fingerprint:
+                    return {
+                        "tool": "create_ticket",
+                        "status": "error",
+                        "error": "idempotency_conflict",
+                    }
+                return {
+                    "tool": "create_ticket",
+                    "status": "ok",
+                    **_public_ticket(existing),
+                    "idempotent_replay": True,
+                }
+
+            ticket = {
+                "ticket_id": f"tick_{uuid4().hex[:10]}",
+                "ticket_status": "created",
+                "user_id": context.user_id,
+                "title": parsed.title,
+                "summary": parsed.summary,
+                "priority": parsed.priority,
+                "_request_fingerprint": fingerprint,
+            }
+            self.tickets_by_idempotency_key[key] = ticket
+            return {
+                "tool": "create_ticket",
+                "status": "ok",
+                **_public_ticket(ticket),
+                "idempotent_replay": False,
+            }
+
+
+def _public_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in ticket.items() if not key.startswith("_")}
+
+
+def _safe_validation_errors(exc: ValidationError) -> list[dict[str, Any]]:
+    return [
+        {"loc": list(error["loc"]), "type": error["type"]}
+        for error in exc.errors(include_input=False, include_url=False)
+    ]

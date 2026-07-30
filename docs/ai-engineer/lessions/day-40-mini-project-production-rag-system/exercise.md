@@ -97,9 +97,11 @@ Nếu chưa có provider embedding/LLM thật, tạo interface và một fake pr
 Tạo `backend/app/core/config.py`:
 
 ```python
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     database_url: str
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "rag_chunks"
@@ -109,14 +111,12 @@ class Settings(BaseSettings):
     dense_top_k: int = 50
     sparse_top_k: int = 50
     rerank_top_n: int = 30
+    rerank_timeout_ms: int = 800
     context_top_k: int = 6
     max_context_tokens: int = 3500
     llm_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
-
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
 ```
@@ -260,6 +260,59 @@ async def dense_search(query_vector: list[float], auth: AuthContext, top_k: int)
     return await vector_store.search(query_vector=query_vector, filter_=filter_, top_k=top_k)
 ```
 
+Qdrant implementation hiện hành dùng `query_points` và lấy kết quả từ `response.points`:
+
+```python
+from qdrant_client import AsyncQdrantClient, models
+
+
+def build_acl_filter(
+    tenant_id: str,
+    roles: list[str],
+    index_version: str,
+) -> models.Filter:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="tenant_id",
+                match=models.MatchValue(value=tenant_id),
+            ),
+            models.FieldCondition(
+                key="index_version",
+                match=models.MatchValue(value=index_version),
+            ),
+            models.FieldCondition(
+                key="deleted",
+                match=models.MatchValue(value=False),
+            ),
+            models.FieldCondition(
+                key="acl_roles",
+                match=models.MatchAny(any=roles),
+            ),
+        ]
+    )
+
+
+async def qdrant_dense_search(
+    client: AsyncQdrantClient,
+    query_vector: list[float],
+    auth: AuthContext,
+    top_k: int,
+):
+    response = await client.query_points(
+        collection_name=settings.qdrant_collection,
+        query=query_vector,
+        query_filter=build_acl_filter(
+            tenant_id=auth.tenant_id,
+            roles=auth.roles,
+            index_version=settings.active_index_version,
+        ),
+        limit=top_k,
+        with_payload=True,
+    )
+    return response.points
+```
+
 Không cho client truyền `tenant_id` để search.
 
 ## 8. Implement lexical search
@@ -351,23 +404,56 @@ Acceptance:
 Flow trong một function orchestration:
 
 ```python
+import asyncio
+from collections.abc import Awaitable
+from typing import TypeVar
+
+T = TypeVar("T")
+
+
+async def traced(trace: PipelineTrace, name: str, operation: Awaitable[T]) -> T:
+    with trace.span(name):
+        return await operation
+
+
 async def answer(request: QueryRequest, user: AuthContext) -> QueryResponse:
     trace = PipelineTrace()
 
     with trace.span("embed_query"):
         query_vector = await embeddings.embed_query(request.question)
 
-    with trace.span("dense_search"):
-        dense_hits = await dense_search(query_vector, user, settings.dense_top_k)
-
-    with trace.span("sparse_search"):
-        sparse_hits = await sparse_search(request.question, user, settings.sparse_top_k)
+    dense_hits, sparse_hits = await asyncio.gather(
+        traced(
+            trace,
+            "dense_search",
+            dense_search(query_vector, user, settings.dense_top_k),
+        ),
+        traced(
+            trace,
+            "sparse_search",
+            sparse_search(request.question, user, settings.sparse_top_k),
+        ),
+    )
 
     with trace.span("rrf"):
         hybrid_hits = reciprocal_rank_fusion([dense_hits, sparse_hits])
 
-    with trace.span("rerank"):
-        reranked_hits = await reranker.rerank(request.question, hybrid_hits[:50], settings.rerank_top_n)
+    try:
+        reranked_hits = await asyncio.wait_for(
+            traced(
+                trace,
+                "rerank",
+                reranker.rerank(
+                    request.question,
+                    hybrid_hits[:50],
+                    settings.rerank_top_n,
+                ),
+            ),
+            timeout=settings.rerank_timeout_ms / 1000,
+        )
+    except asyncio.TimeoutError:
+        trace.metadata["reranker_fallback"] = "timeout"
+        reranked_hits = hybrid_hits[: settings.rerank_top_n]
 
     context_hits = reranked_hits[: settings.context_top_k]
     if not context_hits:
@@ -386,7 +472,9 @@ Acceptance:
 
 - Query response có `trace_id`.
 - Trace lưu đủ dense/sparse/reranked/context IDs.
-- Latency total bằng tổng stage tương đối hợp lý.
+- Dense và sparse search chạy song song.
+- Reranker có timeout thật và fallback về hybrid ranking.
+- `total_ms` bám critical path; do có stage chạy song song, nó không bắt buộc bằng tổng mọi stage.
 
 ## 13. Implement simple UI
 

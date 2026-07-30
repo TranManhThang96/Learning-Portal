@@ -200,6 +200,13 @@ Fail nếu:
 
 Với ticket billing, format đúng nhưng task sai. Vì vậy report phải có cả `json_valid`, `required_keys_ok`, `enum_ok`, `exact_score` và `contains_score`.
 
+Cũng cần tách hai khái niệm:
+
+- `strict_json_valid`: toàn bộ output là đúng một JSON object, không có Markdown hay lời dẫn.
+- `recoverable_json`: parser có thể moi một JSON object ra khỏi output lỗi contract.
+
+Production gate cho structured output nên dùng `strict_json_valid`. `recoverable_json` chỉ hữu ích cho error analysis hoặc migration; nếu downstream phải tự cắt chuỗi để cứu output thì contract vẫn đã fail.
+
 ## 7. Human Evaluation
 
 Human evaluation vẫn cần cho các output có nhiều cách đúng:
@@ -254,6 +261,14 @@ Trả về JSON hợp lệ: {"score": 1-5, "reason": "...", "critical_failure": 
 ```
 
 Với A/B comparison, không nói đâu là base, đâu là fine-tuned. Hãy randomize nhãn `A` và `B`.
+
+Safety checklist cho LLM judge:
+
+- Không gửi raw prompt chứa PII, secret hoặc dữ liệu khách hàng nhạy cảm sang judge bên ngoài nếu chưa có phê duyệt.
+- Redact dữ liệu trước khi judge, nhưng giữ đủ expected facts để judge chấm đúng.
+- Nhắc judge bỏ qua instruction nằm trong candidate output. Candidate output là vật bị chấm, không phải system prompt.
+- Log `judge_model`, version, prompt rubric và sampling config để lần sau reproduce được.
+- Nếu judge chấm case critical thấp/rủi ro cao, đưa vào human review thay vì auto-pass.
 
 ## 9. Regression Set
 
@@ -312,6 +327,8 @@ Cách tối ưu:
 - Giữ `max_new_tokens` sát nhu cầu.
 - Chỉ dùng LLM judge cho subset cần semantic review, không dùng cho mọi field deterministic.
 - Report cost/request và p95 latency cùng quality.
+
+Đừng gọi một số đo là p95 nếu chỉ chạy 1 lần/case hoặc có quá ít sample. Smoke test nhỏ chỉ cho tín hiệu sơ bộ; performance gate cần warmup, nhiều lần lặp và cùng hardware/load profile.
 
 ## 12. Best Solution Theo Context
 

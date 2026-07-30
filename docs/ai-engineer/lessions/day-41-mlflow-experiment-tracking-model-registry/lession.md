@@ -20,6 +20,7 @@ Sau bài này, bạn cần làm được:
 - Log `params`, `metrics`, `artifacts`, model, dataset metadata và code version trong cùng một run.
 - Register model version vào Model Registry.
 - Dùng alias như `candidate`, `champion`, `shadow` để quản lý deployment target.
+- Chọn hyperparameter bằng validation set và chỉ dùng holdout test cho release candidate cuối cùng.
 - Viết decision note trả lời production readiness, trade-off, rollback và limitation.
 
 Ghi chú API hiện tại: từ MLflow 2.9.0, Model Registry stages như `Staging`/`Production` đã bị deprecate. Workflow mới nên dùng model version tags và aliases, ví dụ `models:/sentiment-classifier@champion`.
@@ -58,8 +59,8 @@ Tối thiểu mỗi run nên log:
 | Nhóm | Ví dụ | Lý do |
 |---|---|---|
 | Params | `model_type`, `learning_rate`, `max_features`, `epochs`, `batch_size`, `seed` | So sánh cấu hình và reproduce |
-| Metrics | `accuracy`, `macro_f1`, `eval_loss`, `p95_latency_ms`, `cost_per_1k_predictions` | Chọn best run theo business gate |
-| Artifacts | `classification_report.json`, `confusion_matrix.png`, `model_card.md`, `eval_summary.json` | Review bằng người, audit và debug |
+| Metrics | `val_accuracy`, `val_macro_f1`, `eval_loss`, `val_p95_latency_ms`, `cost_per_1k_predictions` | Chọn best run theo business gate |
+| Artifacts | `validation_classification_report.json`, `confusion_matrix.png`, `model_card.md`, `eval_summary.json` | Review bằng người, audit và debug |
 | Dataset | `dataset_version`, `dataset_hash`, train/validation/test split | Tránh so sánh lệch dữ liệu |
 | Code | `git_commit`, `training_script`, package lock | Biết code nào sinh model |
 | Tags | `owner`, `task`, `environment`, `approval_status` | Tìm kiếm và governance |
@@ -180,13 +181,13 @@ class TrainConfig:
     dataset_path: Path
     dataset_version: str
     artifact_dir: Path
-    test_size: float = 0.2
+    validation_size: float = 0.2
     random_state: int = 42
     max_features: int = 30000
     ngram_min: int = 1
     ngram_max: int = 2
     classifier_c: float = 1.0
-    min_macro_f1: float = 0.78
+    min_val_macro_f1: float = 0.78
     max_p95_latency_ms: float = 30.0
 
 
@@ -236,8 +237,10 @@ def load_dataset(path: Path) -> pd.DataFrame:
     df["text"] = df["text"].astype(str).str.strip()
     df["label"] = df["label"].astype(str).str.strip()
     df = df[(df["text"] != "") & (df["label"] != "")]
-    if len(df) < 20:
-        raise ValueError("Dataset quá nhỏ để đánh giá ổn định. Cần ít nhất 20 dòng.")
+    if len(df) < 30:
+        raise ValueError("Dataset quá nhỏ cho lab 3 lớp. Cần ít nhất 30 dòng.")
+    if df["label"].value_counts().min() < 5:
+        raise ValueError("Mỗi class cần ít nhất 5 dòng để split stratified ổn định.")
     return df
 
 
@@ -289,16 +292,18 @@ def train_and_log(cfg: TrainConfig) -> str:
     commit = git_commit()
     df = load_dataset(cfg.dataset_path)
 
-    stratify = df["label"] if df["label"].value_counts().min() >= 2 else None
-    train_df, test_df = train_test_split(
+    train_df, validation_df = train_test_split(
         df,
-        test_size=cfg.test_size,
+        test_size=cfg.validation_size,
         random_state=cfg.random_state,
-        stratify=stratify,
+        stratify=df["label"],
     )
 
     model = build_model(cfg)
-    run_name = f"{cfg.registered_model_name}-{cfg.dataset_version}-{commit[:8]}"
+    run_name = (
+        f"{cfg.registered_model_name}-{cfg.dataset_version}-"
+        f"c{cfg.classifier_c}-{commit[:8]}"
+    )
 
     with mlflow.start_run(run_name=run_name) as run:
         run_id = run.info.run_id
@@ -309,7 +314,12 @@ def train_and_log(cfg: TrainConfig) -> str:
                 "dataset_path": str(cfg.dataset_path),
                 "dataset_version": cfg.dataset_version,
                 "dataset_hash": dataset_hash,
-                "test_size": cfg.test_size,
+                "validation_size": cfg.validation_size,
+                "split_strategy": (
+                    f"stratified_train_validation_"
+                    f"{1 - cfg.validation_size:.2f}_{cfg.validation_size:.2f}_"
+                    f"seed_{cfg.random_state}"
+                ),
                 "random_state": cfg.random_state,
                 "max_features": cfg.max_features,
                 "ngram_range": f"{cfg.ngram_min},{cfg.ngram_max}",
@@ -332,34 +342,46 @@ def train_and_log(cfg: TrainConfig) -> str:
             targets="label",
             name=f"{cfg.dataset_version}-train",
         )
-        test_input = mlflow.data.from_pandas(
-            test_df,
+        validation_input = mlflow.data.from_pandas(
+            validation_df,
             source=str(cfg.dataset_path),
             targets="label",
-            name=f"{cfg.dataset_version}-test",
+            name=f"{cfg.dataset_version}-validation",
         )
         mlflow.log_input(train_input, context="training")
-        mlflow.log_input(test_input, context="evaluation")
+        mlflow.log_input(validation_input, context="validation")
 
         model.fit(train_df["text"], train_df["label"])
-        predictions = model.predict(test_df["text"])
+        predictions = model.predict(validation_df["text"])
 
-        report = classification_report(
-            test_df["label"],
+        validation_report = classification_report(
+            validation_df["label"],
             predictions,
             output_dict=True,
             zero_division=0,
         )
         metrics = {
-            "accuracy": accuracy_score(test_df["label"], predictions),
-            "macro_f1": f1_score(test_df["label"], predictions, average="macro"),
-            "weighted_f1": f1_score(test_df["label"], predictions, average="weighted"),
+            "val_accuracy": accuracy_score(validation_df["label"], predictions),
+            "val_macro_f1": f1_score(validation_df["label"], predictions, average="macro"),
+            "val_weighted_f1": f1_score(
+                validation_df["label"],
+                predictions,
+                average="weighted",
+            ),
         }
-        metrics.update(estimate_latency_ms(model, test_df["text"]))
+        metrics.update(
+            {
+                f"val_{name}": value
+                for name, value in estimate_latency_ms(model, validation_df["text"]).items()
+            }
+        )
         mlflow.log_metrics(metrics)
 
         cfg.artifact_dir.mkdir(parents=True, exist_ok=True)
-        write_json(cfg.artifact_dir / "classification_report.json", report)
+        write_json(
+            cfg.artifact_dir / "validation_classification_report.json",
+            validation_report,
+        )
         write_json(
             cfg.artifact_dir / "eval_summary.json",
             {
@@ -382,18 +404,20 @@ def train_and_log(cfg: TrainConfig) -> str:
                     "## Validation",
                     f"- Dataset version: `{cfg.dataset_version}`",
                     f"- Dataset hash: `{dataset_hash}`",
-                    f"- Macro F1: `{metrics['macro_f1']:.4f}`",
-                    f"- P95 latency ms: `{metrics['p95_latency_ms']:.2f}`",
+                    f"- Validation Macro F1: `{metrics['val_macro_f1']:.4f}`",
+                    f"- Validation P95 latency ms: `{metrics['val_p95_latency_ms']:.2f}`",
+                    "- Holdout test: chưa chạy; chỉ chạy sau khi chọn candidate.",
                     "",
                     "## Known limitations",
                     "- Chưa kiểm thử drift theo thời gian.",
                     "- Chưa kiểm thử fairness theo domain/user segment.",
                     "- Không log raw PII; sample predictions phải được redact trước khi chia sẻ.",
                     "",
-                "## Rollback",
-                "Deployment nên load `models:/sentiment-classifier@champion`; rollback bằng cách trỏ alias `champion` về version trước đó.",
-            ]
-        ),
+                    "## Rollback",
+                    f"Deployment nên load `models:/{cfg.registered_model_name}@champion`; "
+                    "rollback bằng cách trỏ alias `champion` về version trước đó.",
+                ]
+            ),
             encoding="utf-8",
         )
         (cfg.artifact_dir / "requirements-lock.txt").write_text(
@@ -402,12 +426,15 @@ def train_and_log(cfg: TrainConfig) -> str:
         )
         mlflow.log_artifacts(str(cfg.artifact_dir), artifact_path="reports")
 
-        signature = infer_signature(test_df["text"].head(5), model.predict(test_df["text"].head(5)))
+        signature = infer_signature(
+            validation_df["text"].head(5),
+            model.predict(validation_df["text"].head(5)),
+        )
         model_info = mlflow.sklearn.log_model(
             sk_model=model,
             name="model",
             signature=signature,
-            input_example=test_df["text"].head(2),
+            input_example=validation_df["text"].head(2),
             registered_model_name=cfg.registered_model_name,
         )
 
@@ -426,22 +453,16 @@ def train_and_log(cfg: TrainConfig) -> str:
             value=run_id,
         )
 
-        passed_gate = (
-            metrics["macro_f1"] >= cfg.min_macro_f1
-            and metrics["p95_latency_ms"] <= cfg.max_p95_latency_ms
+        passed_validation_gate = (
+            metrics["val_macro_f1"] >= cfg.min_val_macro_f1
+            and metrics["val_p95_latency_ms"] <= cfg.max_p95_latency_ms
         )
         client.set_model_version_tag(
             name=cfg.registered_model_name,
             version=version,
-            key="release_gate",
-            value="passed" if passed_gate else "failed",
+            key="validation_gate",
+            value="passed" if passed_validation_gate else "failed",
         )
-        if passed_gate:
-            client.set_registered_model_alias(
-                name=cfg.registered_model_name,
-                alias="candidate",
-                version=version,
-            )
 
         return run_id
 
@@ -482,6 +503,23 @@ python train_day41.py --dataset-path data/sentiment_v1.csv --dataset-version sen
 python train_day41.py --dataset-path data/sentiment_v1.csv --dataset-version sentiment-v1 --classifier-c 3.0
 ```
 
+Ba run trên chỉ được so sánh bằng validation metrics. Không nhìn holdout test để chọn `classifier_c`. Sau khi chọn đúng một model version làm candidate, chạy release-evaluation job một lần trên holdout test bất biến, log `holdout_test_report.json`, rồi gắn tag `holdout_test_status=passed|failed`.
+
+Code không tự đặt alias `candidate`: nếu mọi run đạt ngưỡng, alias tự động sẽ bị run cuối cùng ghi đè dù đó chưa chắc là run tốt nhất. Reviewer phải so sánh các run cùng dataset/split rồi mới đặt alias.
+
+Với project thật, holdout nên là file/snapshot riêng như `data/sentiment_holdout_v1.csv`; tuning script không được đọc file này. Release-evaluation job cần:
+
+```text
+load models:/sentiment-classifier@candidate
+  -> predict immutable holdout
+  -> compute test metrics và per-class errors
+  -> log holdout_test_report.json trong một release-evaluation run
+  -> link model version + source training run
+  -> set holdout_test_status=passed chỉ khi mọi gate đạt
+```
+
+Không gắn tag `passed` bằng tay nếu chưa có artifact và run ID chứng minh kết quả. Nếu sau nhiều release bạn liên tục nhìn holdout để điều chỉnh model, holdout đó đã trở thành validation set; hãy tạo holdout mới.
+
 ## 7. Promote candidate thành champion
 
 Không nên tự động promote chỉ vì một run có metric cao nhất. Nên có bước validation và approval riêng.
@@ -500,10 +538,15 @@ def promote(tracking_uri: str, model_name: str, source_alias: str, target_alias:
     client = MlflowClient()
 
     candidate = client.get_model_version_by_alias(model_name, source_alias)
-    if candidate.tags.get("release_gate") != "passed":
+    if candidate.tags.get("validation_gate") != "passed":
         raise RuntimeError(
-            f"Model version {candidate.version} chưa qua release gate: "
-            f"{candidate.tags.get('release_gate')}"
+            f"Model version {candidate.version} chưa qua validation gate: "
+            f"{candidate.tags.get('validation_gate')}"
+        )
+    if candidate.tags.get("holdout_test_status") != "passed":
+        raise RuntimeError(
+            f"Model version {candidate.version} chưa qua holdout test: "
+            f"{candidate.tags.get('holdout_test_status')}"
         )
 
     client.set_model_version_tag(
@@ -592,7 +635,7 @@ Performance concerns:
 - Log artifact quá lớn trong training loop có thể làm chậm job.
 - UI query chậm nếu backend store phình to và không có retention policy.
 - Registry alias chỉ giải quyết chọn model version; serving vẫn cần cache model và warm-up riêng.
-- Model tốt nhất theo `macro_f1` có thể không đạt latency/cost gate.
+- Model tốt nhất theo `val_macro_f1` có thể không đạt latency/cost gate.
 
 Cost concerns:
 
@@ -623,7 +666,7 @@ Có, MLflow dùng được trong production nếu đáp ứng các điều kiệ
 - Artifact store dùng object storage bền vững như S3/GCS/Azure Blob, có encryption và lifecycle policy.
 - Training pipeline bắt buộc log dataset version/hash, code commit, params, metrics, artifacts và model signature.
 - Model Registry alias là contract với deployment, ví dụ serving chỉ đọc `models:/sentiment-classifier@champion`.
-- Promotion có release gate: quality metric, latency, cost, security review, data leakage check và rollback target.
+- Promotion có validation gate, holdout test chạy đúng một lần cho candidate, latency/cost gate, security review, data leakage check và rollback target.
 - Không log dữ liệu nhạy cảm chưa redact.
 - Có monitoring sau deploy để phát hiện drift, latency regression, error rate và business metric regression.
 
@@ -634,9 +677,10 @@ Không nên xem MLflow là toàn bộ production platform. MLflow quản lý lin
 Cuối Day 41, bạn nên có:
 
 - MLflow UI có ít nhất 3 runs.
-- Mỗi run có params, metrics, dataset inputs, artifacts và logged model.
+- Mỗi run có params, validation metrics, dataset inputs, artifacts và logged model.
 - Một registered model tên rõ, ví dụ `sentiment-classifier`.
-- Alias `candidate` trỏ tới version đã qua gate.
+- Alias `candidate` trỏ tới version được chọn sau khi so sánh validation công bằng.
+- Candidate có holdout test report và tag `holdout_test_status=passed`.
 - Alias `champion` trỏ tới version được approve để serve.
 - `model_card.md`, `eval_summary.json` và decision note.
 - Rollback plan: version trước đó là gì và lệnh nào đổi alias về version đó.

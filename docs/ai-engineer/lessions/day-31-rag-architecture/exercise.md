@@ -47,8 +47,8 @@ Query path:
 User
   -> API/Auth
   -> Query Normalize/Rewrite
-  -> Hybrid Retriever
-  -> ACL Filter
+  -> Permission-aware Hybrid Retriever
+  -> Backend Post-filter
   -> Reranker
   -> Context Builder
   -> LLM Generator
@@ -102,9 +102,10 @@ Checklist:
 Gợi ý thực dụng cho enterprise docs:
 
 ```text
-dense top 50 + BM25 top 50
+dense top 50 with tenant/ACL pre-filter
++ BM25 top 50 with tenant/ACL pre-filter
 -> RRF merge
--> ACL filter
+-> backend post-filter
 -> rerank top 50
 -> context top 5-8 chunks
 ```
@@ -123,15 +124,19 @@ def answer_policy_question(question, user):
     dense_candidates = dense_search(
         normalized_query,
         tenant_id=tenant_id,
+        acl_tags=acl_tags,
         top_k=50,
     )
     bm25_candidates = bm25_search(
         normalized_query,
         tenant_id=tenant_id,
+        acl_tags=acl_tags,
         top_k=50,
     )
 
     candidates = merge_and_dedupe(dense_candidates, bm25_candidates)
+    # Defense-in-depth: search backends pre-filter; backend checks again
+    # before text can reach the reranker, context builder, or LLM.
     candidates = filter_by_acl(candidates, acl_tags)
     reranked = rerank(normalized_query, candidates[:50], timeout_ms=800)
     context, sources = build_context(reranked, max_tokens=2500)

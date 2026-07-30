@@ -53,10 +53,10 @@ export LOCAL_LLM_RUNTIME=llama.cpp
 Ví dụ concept:
 
 ```bash
-python -m vllm.entrypoints.openai.api_server \
-  --model <model-id> \
+vllm serve <model-id> \
   --host 0.0.0.0 \
-  --port 8000
+  --port 8000 \
+  --served-model-name local-chat
 ```
 
 Gateway config:
@@ -64,7 +64,7 @@ Gateway config:
 ```bash
 export LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 export LOCAL_LLM_API_KEY=local
-export LOCAL_LLM_MODEL=<model-id>
+export LOCAL_LLM_MODEL=local-chat
 export LOCAL_LLM_RUNTIME=vllm
 ```
 
@@ -85,9 +85,11 @@ Yêu cầu bắt buộc:
 - `GET /health` trả process health.
 - `GET /ready` kiểm tra runtime/model readiness.
 - Có timeout.
-- Có concurrency limit.
+- Có concurrency limit và queue timeout trả `503` khi service đầy.
 - Có max input length và max output tokens.
 - Có structured log, không log raw prompt.
+- Dùng shared `httpx.AsyncClient` được tạo/đóng trong FastAPI lifespan.
+- `/ready` probe runtime hiện tại, không chỉ đọc state từ startup.
 
 Chạy:
 
@@ -251,4 +253,3 @@ Gợi ý quyết định:
 - [ ] Có quality mini eval.
 - [ ] Có quyết định production rõ ràng.
 - [ ] Có rollback/fallback plan.
-

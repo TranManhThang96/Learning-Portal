@@ -58,6 +58,16 @@ text,label
 
 Trong thực tế, dataset nên có ít nhất vài nghìn sample và được review label guideline. File nhỏ này chỉ để kiểm tra pipeline.
 
+Nếu một review có nhiều phiên bản hoặc nhiều message thuộc cùng conversation, thêm cột `group_id`. Kiểm tra sau split:
+
+```python
+assert set(train_df["group_id"]).isdisjoint(val_df["group_id"])
+assert set(train_df["group_id"]).isdisjoint(test_df["group_id"])
+assert set(val_df["group_id"]).isdisjoint(test_df["group_id"])
+```
+
+Synthetic fallback của script đã dùng `group_id`, vì vậy các biến thể của cùng câu gốc không bị rải sang nhiều split.
+
 ## Exercise 2: Chạy Training Script
 
 Từ folder Day 16:
@@ -222,6 +232,7 @@ Chưa dùng production. Dataset hiện chỉ là synthetic fallback 36 dòng, kh
 ## Checklist Hoàn Thành
 
 - [ ] Dataset có schema `text,label`.
+- [ ] Duplicate/variant cùng nguồn không xuất hiện ở nhiều split; dùng `group_id` khi cần.
 - [ ] Baseline đã train và lưu artifact.
 - [ ] Transformer đã fine-tune và lưu artifact.
 - [ ] Có `comparison.json`.

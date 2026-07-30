@@ -46,7 +46,11 @@
     "bm25_top_k": 50,
     "vector_top_k": 50,
     "rerank_top_k": 20,
-    "context_top_k": 6
+    "context_top_k": 6,
+    "retrieved_chunk_ids": [
+      "hr_policy_001:v1:0007",
+      "hr_policy_001:v1:0012"
+    ]
   },
   "latency_ms": {
     "retrieve": 52,
@@ -62,10 +66,16 @@
   "guardrails": {
     "pii_detected": false,
     "citation_valid": true,
-    "policy_action": "allow"
+    "policy_action": "allow",
+    "prompt_injection_blocked": null,
+    "acl_leak": false
   }
 }
 ```
+
+`retrieved_chunk_ids` phục vụ eval/debug và chỉ được trả qua trace endpoint có
+authorization. End-user query response không cần lộ danh sách retrieval đầy đủ hoặc
+raw context.
 
 ## 3. `.env.example` Template
 
@@ -129,3 +139,35 @@ INDEX_VERSION=enterprise_docs_v1
 - Có ingestion/query/eval paths.
 - Có readiness checklist trước UI.
 - Có limitations và production conditions.
+
+## 7. API Invariants Giữa Day 46-49
+
+| Invariant | Lý do |
+|---|---|
+| `policy_action` là enum | Eval không đoán refusal từ wording |
+| `citations[*].chunk_id` thuộc allowed context | Không cite source ngoài trust boundary |
+| `trace.guardrails.acl_leak` có `true/false/null` | Phân biệt fail, pass và case không áp dụng |
+| `latency_ms.total` luôn có | UI/report không tự cộng field thiếu |
+| `usage` dùng số không âm | Cost/token report có contract |
+| Citation có `document_version` | Audit stale source |
+
+## 8. Nguồn Kỹ Thuật Đã Xác Minh
+
+Truy cập ngày `2026-06-08`:
+
+- [FastAPI request files](https://fastapi.tiangolo.com/tutorial/request-files/):
+  `UploadFile`, spooled file, async methods và `multipart/form-data`.
+- [FastAPI forms and files](https://fastapi.tiangolo.com/tutorial/request-forms-and-files/):
+  cần cài `python-multipart` để nhận form/file.
+- [FastAPI response model](https://fastapi.tiangolo.com/tutorial/response-model/):
+  validate/filter output theo response contract.
+- [FastAPI testing](https://fastapi.tiangolo.com/tutorial/testing/):
+  `TestClient`; async test có thể dùng HTTPX ASGI transport.
+- [Pydantic models](https://docs.pydantic.dev/latest/concepts/models/) và
+  [fields](https://docs.pydantic.dev/latest/concepts/fields/):
+  `BaseModel`, `Field`, `model_validate_json`, constraints và strictness.
+- [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/):
+  `BaseSettings`, `SettingsConfigDict`, env sources và `.env`.
+
+Context7 đã xác minh FastAPI `0.128.0`, Pydantic v2 và settings syntax dùng trong
+bài. Không pin version trong prose thay cho dependency lock của capstone.

@@ -327,7 +327,7 @@ def main() -> None:
     )
 
     amp_enabled = cfg.use_amp and device.type == "cuda"
-    scaler = torch.amp.GradScaler(device="cuda", enabled=amp_enabled)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
 
     log_event(
         "run_started",

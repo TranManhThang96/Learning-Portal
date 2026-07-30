@@ -225,7 +225,29 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     return result
 ```
 
+`errors="coerce"` biến giá trị datetime parse lỗi thành `NaT`. Đây là lựa chọn tốt cho pipeline vì không crash giữa chừng, nhưng validation sau đó phải bắt `NaT` ở các cột bắt buộc như `prediction_time` và `signup_at`.
+
 Nếu feature cần join từ bảng event/log, dùng as-of join hoặc query có điều kiện `event_time <= prediction_time`. Trong Pandas, `merge_asof` là pattern hữu ích cho time-aware join, nhưng input phải được sort theo key thời gian.
+
+Ví dụ lấy event gần nhất nhưng không vượt quá prediction time:
+
+```python
+customers = customers.sort_values("prediction_time")
+events = events.sort_values("event_time")
+
+point_in_time = pd.merge_asof(
+    customers,
+    events,
+    left_on="prediction_time",
+    right_on="event_time",
+    by="customer_id",
+    direction="backward",
+    allow_exact_matches=True,
+    tolerance=pd.Timedelta("30D"),
+)
+```
+
+`direction="backward"` chỉ tìm record có `event_time <= prediction_time`. `tolerance` tránh nối một event quá cũ. Vẫn phải test bằng dữ liệu cố tình chứa future event; sort đúng chỉ giúp API chạy, không chứng minh business semantics đúng.
 
 ## 7. Missing Data
 
@@ -286,7 +308,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, RobustScaler
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, RobustScaler
+
+
+def prepare_features(df):
+    """Derive row-wise features without reading future/global state."""
+    return add_time_features(df)
 
 numeric_features = [
     "monthly_charges",
@@ -314,6 +341,7 @@ preprocessor = ColumnTransformer([
 ])
 
 model = Pipeline([
+    ("feature_builder", FunctionTransformer(prepare_features, validate=False)),
     ("preprocess", preprocessor),
     ("classifier", LogisticRegression(max_iter=1_000, class_weight="balanced")),
 ])
@@ -324,6 +352,7 @@ model = Pipeline([
 - `ColumnTransformer` áp dụng preprocessing khác nhau theo nhóm cột.
 - `Pipeline.fit()` fit cả preprocessing và model trên train.
 - `Pipeline.predict()` tái sử dụng đúng preprocessing đã fit.
+- Custom/`FunctionTransformer` giữ datetime derivation trong cùng serving path; `prepare_features` phải là function deterministic, không gọi `now()` và không học state từ toàn dataset.
 - `OneHotEncoder(handle_unknown="ignore")` tránh crash với category mới, nhưng cần monitoring.
 - `SimpleImputer(add_indicator=True)` giúp model biết giá trị nào từng bị missing.
 
@@ -361,6 +390,18 @@ def validate_inference_schema(df):
 ```
 
 Trong production thật, nên dùng Pandera, Great Expectations, Pydantic hoặc validation ở API/data layer. Với Day 5, mục tiêu là hiểu contract, không phụ thuộc tool.
+
+## 10.1. Split theo thời gian trước khi thử feature
+
+Với churn/fraud/usage data, random split thường không mô phỏng production. Hãy sort theo `prediction_time`:
+
+```text
+train      -> giai đoạn cũ nhất, fit model
+validation -> giai đoạn sau train, chọn feature/scaler/threshold
+test       -> giai đoạn mới nhất, đánh giá đúng một lần
+```
+
+Mọi thử nghiệm như thêm feature, đổi scaler hoặc bỏ text phải so trên validation. Chỉ sau khi chốt pipeline mới fit lại trên train + validation và đánh giá test. Nếu nhìn test sau mỗi thay đổi, test đã trở thành validation.
 
 ## 11. Performance Và Production Concerns
 
@@ -410,3 +451,12 @@ Không nên coi notebook preprocessing rời rạc là production-ready. Product
 
 - [Document: decision matrix và checklist](./document.md)
 - [Exercise: pipeline practice](./exercise.md)
+
+Day 6 sẽ đi sâu vào accuracy, precision, recall, F1, ROC-AUC, Average Precision và business metric. Day 5 chỉ dùng metrics để so sánh feature pipeline; không tune lặp lại trên test set và không kết luận model tốt chỉ từ một metric.
+
+## Nguồn kỹ thuật đã kiểm tra
+
+- scikit-learn stable docs qua Context7, `/websites/scikit-learn_stable`: `Pipeline`, `ColumnTransformer`, `FunctionTransformer`, `SimpleImputer`, `OneHotEncoder`, `TfidfVectorizer`.
+- pandas docs qua Context7, `/websites/pandas_pydata`: `pd.to_datetime(..., utc=True, errors="coerce")`, nullable dtypes và `merge_asof`.
+- `ColumnTransformer` phải nhận scalar string cho cột text để truyền 1D input vào `TfidfVectorizer`.
+- `average_precision_score` là Average Precision, không đồng nhất với trapezoidal PR-AUC.

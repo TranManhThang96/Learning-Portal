@@ -14,7 +14,9 @@ customer-churn-ml-pipeline/
   data/
     telco_customer_churn.csv
   src/
+    __init__.py
     churn_pipeline.py
+    train_churn.py
   artifacts/
     customer_churn_model.joblib
     metrics_report.json
@@ -28,6 +30,8 @@ customer-churn-ml-pipeline/
 ```
 
 Trong repo bài học này, bạn không cần commit dataset hoặc model artifact thật. Dataset và artifact thường lớn hoặc có rủi ro PII. Hãy hướng dẫn cách tạo lại artifact bằng command train.
+
+Nếu pipeline có custom transformer, hãy định nghĩa nó trong module importable như `src.churn_pipeline` và chạy training qua launcher `python -m src.train_churn`. Không chạy file định nghĩa class trực tiếp rồi pickle artifact, vì class có thể bị lưu dưới module `__main__` và process inference khác không load được.
 
 ## 2. Dataset Contract
 
@@ -137,7 +141,7 @@ Telco Customer Churn or an equivalent customer subscription dataset.
 - Run EDA: target distribution, missing values, cardinality, segment churn rate.
 - Use sklearn `Pipeline` and `ColumnTransformer`.
 - Train Logistic Regression, Random Forest, Gradient Boosting.
-- Evaluate ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix.
+- Evaluate ROC-AUC, Average Precision, precision, recall, F1, confusion matrix.
 - Tune threshold on validation set.
 - Run error analysis on false positives, false negatives and customer segments.
 - Save artifact with model, threshold, schema and metadata.
@@ -150,14 +154,19 @@ This project is usable as a v1 production pattern only if label definition, poin
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python src/churn_pipeline.py --csv data/telco_customer_churn.csv
+python -m src.train_churn --csv data/telco_customer_churn.csv
 ```
 
 ## Inference
 ```python
-from churn_pipeline import predict_customer_churn
+from pathlib import Path
 
-result = predict_customer_churn(customer_payload)
+from src.churn_pipeline import predict_customer_churn
+
+result = predict_customer_churn(
+    customer_payload,
+    Path("artifacts/customer_churn_model.joblib"),
+)
 ```
 
 ## Limitations
@@ -242,9 +251,9 @@ Validation behavior:
 
 | Business context | Metric chính | Threshold objective | Lý do |
 |---|---|---|---|
-| Retention team có capacity thấp | Precision, PR-AUC | Maximize precision với recall tối thiểu | Không muốn lãng phí offer |
-| Churn rất đắt | Recall, PR-AUC | Recall >= target rồi maximize precision | Chấp nhận nhiều FP để giảm FN |
-| Chỉ dùng để rank list gọi điện | PR-AUC, lift@K | Top K customers | Class threshold ít quan trọng |
+| Retention team có capacity thấp | Precision, AP | Maximize precision với recall tối thiểu | Không muốn lãng phí offer |
+| Churn rất đắt | Recall, AP | Recall >= target rồi maximize precision | Chấp nhận nhiều FP để giảm FN |
+| Chỉ dùng để rank list gọi điện | AP, lift@K | Top K customers | Class threshold ít quan trọng |
 | Realtime offer | F1, latency, calibration | Balance precision/recall và p99 latency | Cần quyết định ngay |
 | Model monitoring | Positive rate, score drift | Alert theo distribution | Offline metric không đủ |
 
@@ -303,8 +312,16 @@ Post-serving:
 
 ## 12. Tài Liệu Tham Khảo
 
-- scikit-learn stable documentation: `Pipeline`, `ColumnTransformer`, preprocessing, classification metrics, ensemble classifiers.
-- Telco Customer Churn dataset.
-- Google Machine Learning Crash Course: Classification.
-- Chip Huyen, Designing Machine Learning Systems.
-- Hidden Technical Debt in Machine Learning Systems.
+Các API được đối chiếu bằng Context7 ngày 8/6/2026:
+
+- [scikit-learn `Pipeline`](https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.Pipeline.html)
+- [scikit-learn `ColumnTransformer`](https://scikit-learn.org/stable/modules/generated/sklearn.compose.ColumnTransformer.html)
+- [scikit-learn `OneHotEncoder`](https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html)
+- [Common pitfalls và data leakage](https://scikit-learn.org/stable/common_pitfalls.html)
+- [Decision threshold tuning](https://scikit-learn.org/stable/modules/classification_threshold.html)
+- [Model persistence và security](https://scikit-learn.org/stable/model_persistence.html)
+- [Telco Customer Churn dataset trên IBM Community](https://community.ibm.com/accelerators/catalog/content/Telco-customer-churn)
+- Chip Huyen, *Designing Machine Learning Systems*.
+- Sculley et al., *Hidden Technical Debt in Machine Learning Systems*.
+
+Security note: `joblib` dựa trên pickle protocol và có thể thực thi code khi load. Chỉ load artifact từ nguồn tin cậy. scikit-learn cũng không hỗ trợ việc load model qua version khác như một contract ổn định; pin dependency và retrain/export lại khi upgrade.

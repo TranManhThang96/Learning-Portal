@@ -13,7 +13,7 @@ Luôn gắn FP/FN với cost thật. Nếu chưa có cost thật, ghi assumption
 
 ## 2. Error analysis checklist
 
-- [ ] Có metric tổng: ROC-AUC, PR-AUC, precision, recall, F1.
+- [ ] Có metric tổng: ROC-AUC, Average Precision, precision, recall, F1.
 - [ ] Có confusion matrix tại threshold đang dùng.
 - [ ] Có threshold sweep từ `0.30` đến `0.80`.
 - [ ] Có lý do chọn threshold bằng business objective.
@@ -111,7 +111,7 @@ Ví dụ gate trước khi promote:
 | Gate | Rule ví dụ | Lý do |
 |---|---:|---|
 | ROC-AUC | `new >= old - 0.01` | Ranking quality không tụt nhiều |
-| PR-AUC | `new >= old - 0.02` | Positive class thường hiếm |
+| Average Precision | `new >= old - 0.02` | Positive class thường hiếm |
 | Recall | `>= 0.75` | Giữ business objective |
 | Precision | `>= 0.35` | Không spam quá nhiều |
 | Positive rate | `<= 0.45` | Không vượt capacity |
@@ -142,3 +142,16 @@ Khi predicted positive rate tăng từ 10% lên 40%:
 - Chỉ save model, không save threshold và feature contract.
 - Không có baseline regression test.
 - Không có câu trả lời rõ ràng về production readiness.
+
+## 10. Nguồn Đã Xác Minh Bằng Context7
+
+Đối chiếu ngày 8/6/2026 với tài liệu scikit-learn stable:
+
+- [Decision threshold tuning](https://scikit-learn.org/stable/modules/classification_threshold.html)
+- [`TunedThresholdClassifierCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TunedThresholdClassifierCV.html)
+- [Probability calibration](https://scikit-learn.org/stable/modules/calibration.html)
+- [`CalibratedClassifierCV`](https://scikit-learn.org/stable/modules/generated/sklearn.calibration.CalibratedClassifierCV.html)
+- [Common pitfalls và data leakage](https://scikit-learn.org/stable/common_pitfalls.html)
+- [Model persistence và security](https://scikit-learn.org/stable/model_persistence.html)
+
+`joblib`, `pickle` và `cloudpickle` có thể thực thi code khi load artifact độc hại. Chỉ load file từ nguồn tin cậy, pin dependency version và test artifact khi nâng scikit-learn.

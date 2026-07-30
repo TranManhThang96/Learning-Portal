@@ -245,3 +245,13 @@ Day 19 tập trung vào contract của một LLM service. Day 20 sẽ mở rộn
 - Prompt cache/semantic cache.
 - Tenant isolation.
 - Secret management.
+
+## 12. Nguồn Kỹ Thuật Đã Xác Minh
+
+- Context7 `/websites/developers_openai_api`: `text.format` cho structured output, strict function schema và `function_call_output`.
+- Context7 `/fastapi/fastapi`: request validation, response model, `Header` và `HTTPException`.
+- OpenAI Function Calling: <https://developers.openai.com/api/docs/guides/function-calling>
+- OpenAI Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
+- Pydantic models: <https://docs.pydantic.dev/latest/concepts/models/>
+
+Provider-specific fields phải nằm sau adapter. Contract nội bộ của application vẫn cần schema version, validation, authorization, idempotency và audit dù provider cam kết strict schema.

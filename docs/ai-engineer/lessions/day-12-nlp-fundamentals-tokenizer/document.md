@@ -1,4 +1,6 @@
-# Day 12 Document: Tokenizer Reference & Production Code
+# Day 12 Reference: Tokenizer API Và Production Template
+
+File này là tài liệu tra cứu sau khi đã học `lession.md`. Nó chứa API notes, helper và wrapper mẫu để đối chiếu hoặc tái sử dụng; toàn bộ khái niệm và luồng học bắt buộc nằm trong bài giảng chính.
 
 ## 1. Pipeline tham chiếu
 
@@ -29,11 +31,10 @@ Các điểm cần nhớ khi dùng Hugging Face:
 - `pad_to_multiple_of=8` có thể hữu ích cho tensor cores/GPU khi có padding.
 - Với thư viện `tokenizers`, `encode_batch` xử lý batch song song và trả `tokens`, `ids`, `attention_mask`, `offsets`, `special_tokens_mask`.
 
-Context7 library IDs đã dùng khi viết bài:
+Context7 library IDs đã đối chiếu khi review bài:
 
 - `/websites/huggingface_co_transformers_main`
 - `/huggingface/tokenizers`
-- `/huggingface/course`
 
 ## 3. Preprocessing helper tối thiểu
 
@@ -103,6 +104,7 @@ class TokenBudgetError(ValueError):
 class TokenizerConfig:
     model_name: str
     max_length: int
+    revision: str = "main"  # Demo default; production dùng commit SHA bất biến.
     truncation_policy: TruncationPolicy = "reject"
     truncation_strategy: Literal["longest_first", "only_first", "only_second"] = "longest_first"
     padding: PaddingPolicy = "longest"
@@ -195,6 +197,7 @@ class TokenizerService:
         self.config = config
         self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
             config.model_name,
+            revision=config.revision,
             use_fast=config.use_fast,
         )
 
@@ -415,3 +418,10 @@ Nếu RAG ingestion:
 - Alert khi p95 token tăng bất thường hoặc rejection rate tăng.
 - Benchmark dynamic padding vs max padding với QPS thật.
 - Document rõ policy khi input vượt budget.
+
+## 9. Nguồn API
+
+- Transformers docs qua Context7: `/websites/huggingface_co_transformers_main`.
+- Tokenizers source/library qua Context7: `/huggingface/tokenizers`.
+- [Tokenizer API](https://huggingface.co/docs/transformers/main/en/main_classes/tokenizer).
+- [Padding và truncation](https://huggingface.co/docs/transformers/main/en/pad_truncation).

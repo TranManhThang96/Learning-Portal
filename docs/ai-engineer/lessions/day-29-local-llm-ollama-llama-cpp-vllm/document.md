@@ -35,6 +35,8 @@ Endpoint tham khảo:
 OpenAI-compatible: http://localhost:8000/v1
 ```
 
+Với vLLM, `vllm serve <MODEL_NAME>` expose OpenAI-compatible API. Nếu dùng `--served-model-name local-chat`, client phải gửi `"model": "local-chat"` thay vì model id gốc. Chat completion còn cần tokenizer có chat template; nếu model không cung cấp template, hãy cấu hình `--chat-template` bằng một template đã test thay vì tự đoán role markers.
+
 ### llama.cpp
 
 ```bash
@@ -47,6 +49,35 @@ OpenAI-compatible: http://localhost:8000/v1
 ```
 
 Tùy version/build, API có thể khác nhau. Trước khi viết adapter production, luôn kiểm tra endpoint `/health`, `/v1/models`, `/v1/chat/completions` hoặc endpoint native mà runtime cung cấp.
+
+### OpenAI-compatible contract cần smoke test
+
+"OpenAI-compatible" nghĩa là runtime cố gắng nhận request theo OpenAI API shape, không có nghĩa mọi field đều giống cloud API 100%.
+
+Trước khi cho app dùng runtime local, chạy tối thiểu:
+
+```bash
+curl "$LOCAL_LLM_BASE_URL/models" \
+  -H "Authorization: Bearer $LOCAL_LLM_API_KEY"
+
+curl "$LOCAL_LLM_BASE_URL/chat/completions" \
+  -H "Authorization: Bearer $LOCAL_LLM_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "'"$LOCAL_LLM_MODEL"'",
+    "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
+    "temperature": 0,
+    "max_tokens": 8
+  }'
+```
+
+Checklist:
+
+- Model name trong response `/models` phải khớp với `LOCAL_LLM_MODEL` mà client gửi.
+- Local runtime có thể bỏ qua API key, nhưng OpenAI Python client vẫn cần một chuỗi `api_key`.
+- `usage`, `system_fingerprint`, tool calling, JSON schema, logprobs hoặc streaming có thể thiếu/tùy runtime; code production phải xử lý optional field.
+- Timeout và retry phải đặt rõ. Request sinh text dài retry quá nhiều có thể nhân tải lên runtime đang lỗi.
+- Nếu chuyển Ollama -> vLLM -> llama.cpp, business service không đổi; chỉ gateway/config đổi.
 
 ## 2. Environment Config
 
@@ -407,6 +438,11 @@ def main() -> None:
     total_s = time.perf_counter() - started
 
     latencies = [float(item["latency_ms"]) for item in results]
+    output_tokens = [
+        int(item["output_tokens"])
+        for item in results
+        if isinstance(item.get("output_tokens"), int)
+    ]
     print(
         {
             "model": model,
@@ -418,6 +454,9 @@ def main() -> None:
             "latency_p50_ms": round(percentile(latencies, 50), 2),
             "latency_p95_ms": round(percentile(latencies, 95), 2),
             "latency_p99_ms": round(percentile(latencies, 99), 2),
+            "output_tokens_per_s": round(sum(output_tokens) / total_s, 2)
+            if output_tokens
+            else None,
         }
     )
 
@@ -502,3 +541,15 @@ top
 - Không tách gateway khỏi runtime, khiến đổi Ollama sang vLLM phải sửa business code.
 - Không có fallback khi GPU OOM hoặc runtime restart.
 - Nhầm average latency với user experience; p95/p99 mới phản ánh sự khó chịu của user.
+
+## 9. Nguồn đã đối chiếu
+
+Đối chiếu ngày 2026-06-08 qua Context7 và tài liệu chính thức:
+
+- vLLM quickstart, lệnh `vllm serve`: https://github.com/vllm-project/vllm/blob/v0.14.0rc2/docs/getting_started/quickstart.md
+- vLLM OpenAI-compatible server, `/v1/chat/completions`, chat template và sampling fields: https://github.com/vllm-project/vllm/blob/v0.14.0rc2/docs/serving/openai_compatible_server.md
+- vLLM `--served-model-name` behavior: https://github.com/vllm-project/vllm/blob/v0.14.0rc2/vllm/config/model.py
+- Ollama OpenAI compatibility: https://docs.ollama.com/openai
+- llama.cpp HTTP server: https://github.com/ggml-org/llama.cpp/tree/master/tools/server
+
+Các runtime phát hành nhanh. Pin runtime/container version và chạy contract smoke test thay vì suy luận compatibility chỉ từ tên endpoint.

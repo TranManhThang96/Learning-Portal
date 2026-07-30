@@ -1,5 +1,7 @@
 # Document: Reranking Cheat Sheet Và Runbook
 
+> Đây là tài liệu tra cứu đi kèm. Phần giải thích nền tảng và luồng học đầy đủ nằm trong `lession.md`; file này tập trung vào decision matrix, cấu hình, runbook và nguồn kỹ thuật.
+
 ## 1. Mental model nhanh
 
 Reranking là bước xếp hạng lại một candidate pool nhỏ hơn sau retrieval.
@@ -171,3 +173,17 @@ Reranker dùng được trong production, nhưng không nên bật chỉ vì "ng
 - Nếu metric không tăng hoặc candidate recall thấp, hãy sửa retrieval trước.
 - Nếu data policy không cho gửi dữ liệu ra ngoài, chỉ dùng managed API khi có approval rõ, còn lại self-host.
 - Nếu p95 vượt SLA, dùng conditional rerank hoặc giảm candidate thay vì hy sinh toàn bộ trải nghiệm chat.
+
+## 13. Nguồn kỹ thuật đã xác minh
+
+Các API trong Day 37 được đối chiếu bằng Context7 ngày 2026-06-08:
+
+- [Cohere Python SDK reference](https://github.com/cohere-ai/cohere-python/blob/main/reference.md): `Client(token=...)`, `client.v2.rerank(...)`, `rerank-v4.0-pro`, `top_n`, `max_tokens_per_doc`, `result.index` và `result.relevance_score`.
+- [Sentence Transformers quickstart](https://github.com/huggingface/sentence-transformers/blob/main/docs/quickstart.rst): `CrossEncoder.predict(...)` cho các cặp query-document và `CrossEncoder.rank(...)` cho reranking trực tiếp.
+- [Sentence Transformers repository](https://github.com/huggingface/sentence-transformers): model lifecycle, batching và serving cho bi-encoder/cross-encoder.
+
+Version note:
+
+- Pin `cohere` và `sentence-transformers` trong lockfile.
+- Cohere V2 endpoint được gọi qua `cohere.Client(...).v2.rerank(...)`; không trộn cách khởi tạo client của SDK generation khác mà chưa chạy integration test.
+- Model name và quota là cấu hình deploy, không phải hằng số bất biến của business logic.

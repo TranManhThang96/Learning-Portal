@@ -34,6 +34,8 @@ Day 40: mini project production RAG system
 
 Kỹ năng chính của Day 31 là nhìn RAG như một distributed system có read path, write path, indexing state, query trace và quality regression test.
 
+Lưu ý về thứ tự học: roadmap tách embedding (Day 32), Vector DB (Day 33) rồi mới đào sâu chunking (Day 34) để giảm tải khái niệm. Thứ tự runtime vẫn luôn là `parse -> chunk -> embed -> index`; đổi chunking ở Day 34 đồng nghĩa phải re-embed và reindex dữ liệu của Day 32-33.
+
 ## 2. RAG Giải Quyết Vấn Đề Gì
 
 LLM giỏi language reasoning nhưng yếu ở các điểm production sau:
@@ -103,7 +105,7 @@ Diagram tổng thể:
                                                         | index + metadata  |
                                                         +---------+---------+
                                                                   |
-User -> API/Auth -> Query Normalizer -> Retriever -> ACL Filter -> Reranker
+User -> API/Auth -> Query Normalizer -> Permission-aware Retriever -> Post-filter -> Reranker
                                                                   |
                                                         +---------v---------+
                                                         | Context Builder   |
@@ -292,10 +294,10 @@ Retriever lấy candidates. Các kiểu retrieval:
 Pattern phổ biến:
 
 ```text
-dense top 50
-+ BM25 top 50
+dense top 50 with tenant/ACL pre-filter
++ BM25 top 50 with tenant/ACL pre-filter
 -> merge + dedupe
--> ACL filter
+-> backend post-filter (defense-in-depth)
 -> rerank top 50
 -> select top 5-10 for context
 ```
@@ -628,6 +630,8 @@ def answer_rag(
 
 Đây vẫn chưa phải app hoàn chỉnh. Khi đưa vào production, bạn cần thêm request schema, auth thật, timeout, retry, structured logging, rate limit, metrics, tracing, secret handling và test suite.
 
+Điểm security quan trọng trong code mẫu: `retriever.search(question, user, ...)` phải tự áp dụng tenant/ACL pre-filter ở search layer. Hàm `is_allowed(...)` chỉ là post-filter defense-in-depth trước khi build context. Nếu retriever lấy cả chunk không được phép rồi mới dựa vào prompt để "không tiết lộ", thiết kế đó không đạt production.
+
 ## 10. Dùng Được Trong Production Không?
 
 Có, RAG là pattern production rất thực tế cho knowledge assistant, support bot, policy Q&A, developer assistant và search có natural language. Nhưng chỉ dùng được khi thỏa các điều kiện tối thiểu sau:
@@ -655,4 +659,3 @@ Nếu thiếu ACL hoặc citation validation, không nên dùng cho dữ liệu 
 - [ ] Có latency budget và trace schema.
 - [ ] Liệt kê được production risks: ACL leak, stale index, prompt injection, hallucination, cost spike.
 - [ ] Trả lời được hệ thống này production được không và thiếu điều kiện gì.
-

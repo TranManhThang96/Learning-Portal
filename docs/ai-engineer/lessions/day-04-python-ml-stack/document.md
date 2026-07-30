@@ -213,6 +213,8 @@ Trade-off:
 - Nhưng category mới không có signal riêng, quality có thể giảm.
 - Cần monitor unknown/category drift.
 
+`sparse_output=True` là default hiện hành. Chỉ chuyển `sparse_output=False` khi downstream estimator cần dense input và cardinality/memory budget cho phép.
+
 ### `train_test_split`
 
 ```python
@@ -232,7 +234,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 ### Metrics
 
 ```python
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, average_precision_score, precision_score, recall_score, f1_score, roc_auc_score
 
 metrics = {
     "accuracy": accuracy_score(y_test, y_pred),
@@ -240,6 +242,7 @@ metrics = {
     "recall": recall_score(y_test, y_pred, zero_division=0),
     "f1": f1_score(y_test, y_pred, zero_division=0),
     "roc_auc": roc_auc_score(y_test, y_score),
+    "average_precision": average_precision_score(y_test, y_score),
 }
 ```
 
@@ -250,6 +253,7 @@ Guidance:
 - Recall quan trọng khi false negative đắt.
 - F1 cân bằng precision/recall.
 - ROC-AUC hữu ích khi cần so sánh ranking/probability quality.
+- Average Precision hữu ích khi positive class hiếm. Không gọi nó đồng nhất với trapezoidal PR-AUC: scikit-learn AP là weighted sum của precision theo mức tăng recall.
 
 ## 4. Model artifact với joblib
 
@@ -294,6 +298,7 @@ Security rule: chỉ load `joblib`/pickle artifact từ nguồn trusted. Không 
 
 ## 6. Context7 docs đã tham khảo
 
-- `/numpy/numpy`: `ndarray`, `shape`, `dtype`, matrix multiplication, views/copies.
+- `/websites/numpy_doc_2_4`: `ndarray`, `shape`, `dtype`, matrix multiplication, broadcasting, views/copies.
 - `/websites/pandas_pydata`: DataFrame boolean indexing, groupby aggregate, `info()`, missing value handling.
 - `/websites/scikit-learn_stable`: `Pipeline`, `ColumnTransformer`, `OneHotEncoder(handle_unknown="ignore")`, examples for preprocessing pipelines.
+- Với `ColumnTransformer`, scalar string selector truyền cột text dưới dạng 1D cho vectorizer; list một phần tử sẽ tạo 2D input và không đúng contract của `TfidfVectorizer`.

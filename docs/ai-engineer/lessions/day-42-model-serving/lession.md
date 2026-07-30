@@ -146,6 +146,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -285,12 +286,10 @@ def sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def client_key(request: Request, tenant_id: str) -> str:
-    api_key = request.headers.get("x-api-key")
-    forwarded_for = request.headers.get("x-forwarded-for")
-    host = forwarded_for or (request.client.host if request.client else "unknown")
-    identity = api_key or host
-    return f"{tenant_id}:{identity}"
+def client_key(request: Request) -> str:
+    principal_id = getattr(request.state, "principal_id", None)
+    host = request.client.host if request.client else "unknown"
+    return principal_id or host
 
 
 def error_detail(code: str, message: str, trace_id: str, retryable: bool) -> dict[str, Any]:
@@ -359,6 +358,24 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content=body)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    trace_id = getattr(request.state, "trace_id", f"tr_{uuid.uuid4().hex}")
+    logger.info(
+        "request_validation_failed",
+        extra={"trace_id": trace_id, "issue_count": len(exc.errors())},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=error_detail(
+            code="VALIDATION_ERROR",
+            message="Request does not match the API contract.",
+            trace_id=trace_id,
+            retryable=False,
+        ),
+    )
+
+
 @app.exception_handler(Exception)
 async def unexpected_exception_handler(request: Request, exc: Exception):
     trace_id = getattr(request.state, "trace_id", f"tr_{uuid.uuid4().hex}")
@@ -383,7 +400,15 @@ async def health() -> dict[str, str]:
 async def ready(request: Request) -> dict[str, str]:
     runtime: RagRuntime = request.app.state.runtime
     if not runtime.loaded:
-        raise HTTPException(status_code=503, detail="runtime is not ready")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=error_detail(
+                code="NOT_READY",
+                message="Runtime is not ready.",
+                trace_id=request.state.trace_id,
+                retryable=True,
+            ),
+        )
     return {"status": "ready", "model_version": runtime.model_version}
 
 
@@ -396,11 +421,16 @@ async def current_model(request: Request) -> dict[str, str]:
 @app.post(
     "/query",
     response_model=QueryResponse,
-    responses={429: {"model": ErrorResponse}, 503: {"model": ErrorResponse}, 504: {"model": ErrorResponse}},
+    responses={
+        422: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
 )
 async def query(payload: QueryRequest, request: Request) -> QueryResponse:
     trace_id = request.state.trace_id
-    rate_key = client_key(request, payload.tenant_id)
+    rate_key = client_key(request)
     if not await request.app.state.rate_limiter.allow(rate_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -459,7 +489,7 @@ async def query_stream(
         top_k=top_k,
         max_output_tokens=max_output_tokens,
     )
-    rate_key = client_key(request, payload.tenant_id)
+    rate_key = client_key(request)
     if not await request.app.state.rate_limiter.allow(rate_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -543,9 +573,13 @@ Ghi chú quan trọng:
 
 - `GET /query/stream` dễ dùng với browser `EventSource`, nhưng query nằm trên URL. Với dữ liệu nhạy cảm, dùng `POST /query/stream` và stream bằng `fetch()`.
 - In-memory rate limiter chỉ đúng cho local hoặc một process. Production nên dùng Redis, API Gateway, Envoy, Kong, NGINX, Cloudflare hoặc service quota tập trung.
+- Không dùng `tenant_id` từ body hoặc API key chưa xác thực làm rate-limit identity vì client có thể đổi giá trị để bypass. Production auth middleware phải đặt trusted `principal_id`/tenant context; fallback IP trong code chỉ dành cho local lab.
+- Không tin trực tiếp `X-Forwarded-For` từ Internet. Chỉ dùng header này khi trusted proxy đã xóa/ghi lại header.
 - Nếu dùng nhiều Uvicorn workers, mỗi worker có limiter và semaphore riêng. Với GPU local, nhiều worker có thể load nhiều bản model và gây OOM.
 - `asyncio.timeout()` cần Python 3.11+. Nếu project dùng Python cũ hơn, thay bằng `asyncio.wait_for()`.
 - Nếu model runtime là sync CPU-bound, không gọi trực tiếp trong async endpoint. Đưa vào worker thread/process hoặc tách thành model server riêng.
+- Khi `StreamingResponse` đã gửi HTTP status/header, lỗi trong generator không thể đổi `200` thành `503/504`. SSE contract phải có terminal event `error`, và client phải xử lý event này.
+- FastAPI hiện có helper SSE native `fastapi.sse.EventSourceResponse` ở các version mới. Bài dùng `StreamingResponse` để giữ wire format rõ và tương thích rộng; nếu dùng helper native, hãy pin version và contract-test event format.
 
 ## 5. Streaming SSE contract
 
@@ -700,3 +734,12 @@ Không nên gọi là production-ready nếu:
 ## 11. Kết luận
 
 FastAPI là lựa chọn tốt cho serving contract, orchestration và product boundary. Nhưng với GPU throughput hoặc LLM traffic nghiêm túc, FastAPI nên đứng trước model server chuyên dụng. Production serving không chỉ là "API chạy được", mà là một hệ thống có contract, limit, observability, versioning và rollback.
+
+## 12. Nguồn kỹ thuật đã kiểm chứng
+
+Đã đối chiếu qua Context7 với tài liệu FastAPI hiện hành:
+
+- Lifespan: https://fastapi.tiangolo.com/advanced/events/
+- Error handlers và `RequestValidationError`: https://fastapi.tiangolo.com/tutorial/handling-errors/
+- `StreamingResponse`: https://fastapi.tiangolo.com/advanced/custom-response/#streamingresponse
+- Server-Sent Events: https://fastapi.tiangolo.com/tutorial/server-sent-events/

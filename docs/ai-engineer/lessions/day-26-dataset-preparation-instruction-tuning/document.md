@@ -57,7 +57,9 @@ Role order hợp lệ:
 
 ## 3. Script chuẩn bị dataset gần production
 
-Script dưới đây dùng Python standard library để dễ chạy. Nó validate schema, normalize record, redact PII phổ biến, deduplicate, split theo `group_id` và xuất dataset card/metadata cơ bản.
+Script dưới đây dùng Python standard library để dễ chạy. Nó validate schema, normalize record, redact PII phổ biến, deduplicate, split theo `group_id` và xuất dataset card/metadata cơ bản. Script fail closed: nếu có schema/parse error, nó vẫn ghi report để debug nhưng không xuất file training.
+
+Mỗi run nên dùng một `out-dir` mới có version/run id. Failed run không được xóa artifact cũ, nên đừng suy luận thành công chỉ vì `dataset_split.jsonl` từ run trước vẫn tồn tại; luôn kiểm tra exit code, `input_sha256` và `automated_checks_passed`.
 
 Lưu thành `instruction_dataset/prepare_dataset.py`, đặt input ở `raw/input.jsonl`, rồi chạy:
 
@@ -133,6 +135,14 @@ def redact_pii(text: str) -> tuple[str, bool]:
     text = API_KEY_RE.sub("[SECRET]", text)
     text = CREDIT_CARD_RE.sub("[CARD]", text)
     return text, text != original
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def validate_messages(row: dict[str, Any], row_id: str) -> list[str]:
@@ -218,24 +228,34 @@ def split_by_group(rows: list[dict[str, Any]], seed: int) -> list[dict[str, Any]
         grouped[row["group_id"]].append(row)
 
     groups = list(grouped)
+    if len(groups) < 3:
+        raise ValueError("Need at least 3 distinct group_id values for train/validation/test")
     random.Random(seed).shuffle(groups)
-    total_rows = len(rows)
-    train_limit = int(total_rows * 0.8)
-    validation_limit = int(total_rows * 0.9)
 
+    split_names = ["train", "validation", "test"]
+    targets = {
+        "train": len(rows) * 0.8,
+        "validation": len(rows) * 0.1,
+        "test": len(rows) * 0.1,
+    }
+    counts: Counter[str] = Counter()
     output: list[dict[str, Any]] = []
-    seen_count = 0
-    for group_id in groups:
-        if seen_count < train_limit:
-            split = "train"
-        elif seen_count < validation_limit:
-            split = "validation"
-        else:
-            split = "test"
+
+    # Seed every split with one whole group, then place each remaining group
+    # into the split furthest below its target. Group integrity is never broken.
+    assignments: list[tuple[str, str]] = []
+    for group_id, split in zip(groups[:3], split_names, strict=True):
+        assignments.append((group_id, split))
+        counts[split] += len(grouped[group_id])
+    for group_id in groups[3:]:
+        split = max(split_names, key=lambda name: targets[name] - counts[name])
+        assignments.append((group_id, split))
+        counts[split] += len(grouped[group_id])
+
+    for group_id, split in assignments:
         for row in grouped[group_id]:
             row["split"] = split
             output.append(row)
-        seen_count += len(grouped[group_id])
     return output
 
 
@@ -284,7 +304,11 @@ def prepare(rows: list[dict[str, Any]], parse_errors: list[str], seed: int, min_
         seen_hashes.add(digest)
         valid_rows.append(row)
 
-    split_rows = split_by_group(valid_rows, seed)
+    try:
+        split_rows = split_by_group(valid_rows, seed)
+    except ValueError as exc:
+        errors.append(str(exc))
+        split_rows = []
     counters.update(Counter(row["split"] for row in split_rows))
     return PreparedDataset(rows=split_rows, errors=errors, warnings=warnings, counters=counters)
 
@@ -340,7 +364,7 @@ def write_dataset_card(path: Path, dataset_name: str, result: PreparedDataset) -
         [
             "",
             "## Privacy",
-            "PII is either absent or redacted by the preparation script. Records marked needs_review are excluded.",
+            "Common PII patterns were scanned/redacted. Records marked needs_review are excluded; human/privacy review is still required.",
             "",
             "## License",
             "Only rows with training-allowed licenses are included. Verify this before production use.",
@@ -354,16 +378,31 @@ def write_dataset_card(path: Path, dataset_name: str, result: PreparedDataset) -
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_metadata(path: Path, dataset_name: str, input_path: Path, result: PreparedDataset, seed: int) -> None:
+def write_metadata(
+    path: Path,
+    dataset_name: str,
+    input_path: Path,
+    result: PreparedDataset,
+    seed: int,
+) -> None:
+    split_counts = Counter(row["split"] for row in result.rows)
+    automated_checks_passed = (
+        not result.errors
+        and bool(result.rows)
+        and all(split_counts.get(name, 0) > 0 for name in ("train", "validation", "test"))
+    )
     metadata = {
         "dataset_name": dataset_name,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "input_path": str(input_path),
+        "input_sha256": file_sha256(input_path),
         "format": "messages_jsonl",
         "seed": seed,
         "rows": len(result.rows),
         "counters": dict(result.counters),
-        "production_ready": len(result.errors) == 0 and len(result.rows) > 0,
+        "automated_checks_passed": automated_checks_passed,
+        "production_ready": False,
+        "production_ready_note": "Requires human quality, privacy, license, leakage and golden-eval review.",
     }
     path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -381,10 +420,11 @@ def main() -> None:
     rows, parse_errors = load_jsonl(args.input)
     result = prepare(rows, parse_errors, seed=args.seed, min_quality=args.min_quality)
 
-    write_jsonl(args.out_dir / "dataset_split.jsonl", result.rows)
     write_report(args.out_dir / "validation_report.md", result)
-    write_dataset_card(args.out_dir / "dataset_card.md", args.dataset_name, result)
     write_metadata(args.out_dir / "metadata.json", args.dataset_name, args.input, result, args.seed)
+    if not result.errors:
+        write_jsonl(args.out_dir / "dataset_split.jsonl", result.rows)
+        write_dataset_card(args.out_dir / "dataset_card.md", args.dataset_name, result)
 
     print(f"rows_in: {len(rows)}")
     print(f"rows_out: {len(result.rows)}")
@@ -392,6 +432,8 @@ def main() -> None:
     print(f"warnings: {len(result.warnings)}")
     for key, value in sorted(result.counters.items()):
         print(f"{key}: {value}")
+    if result.errors:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
@@ -505,3 +547,14 @@ Internal training allowed. Adapter is not approved for public release unless leg
 ## 8. Production answer
 
 Dùng được trong production không? Có, nếu dataset pass schema validation, privacy/license review, dedup, grouped split, human review và eval trước/sau fine-tune. Nếu chỉ mới có dataset tạo nhanh từ synthetic data chưa review, nó chỉ phù hợp prototype hoặc lab.
+
+`metadata.json` cố ý luôn để `production_ready=false`: script chỉ chứng minh automated checks, không thể tự chứng minh consent, license, policy correctness hoặc chất lượng semantic.
+
+## 9. Nguồn đã đối chiếu
+
+Đối chiếu ngày 2026-06-08 qua Context7 và tài liệu chính thức:
+
+- TRL dataset formats, conversational và prompt-completion: https://huggingface.co/docs/trl/v1.0.0/en/dataset_formats
+- TRL `SFTTrainer`, chat template và loss masking: https://huggingface.co/docs/trl/v1.0.0/en/sft_trainer
+- Hugging Face dataset cards: https://huggingface.co/docs/hub/en/datasets-cards
+- Hugging Face Datasets loading/JSON: https://huggingface.co/docs/datasets/en/loading

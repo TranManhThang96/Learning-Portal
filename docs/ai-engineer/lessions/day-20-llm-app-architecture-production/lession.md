@@ -101,6 +101,7 @@ Prompt registry nên lưu:
 - Owner/team chịu trách nhiệm.
 - Model compatibility.
 - Output schema version.
+- Decoding config như temperature và output token cap.
 - Eval score trên golden set.
 - Changelog.
 - Rollout status: `draft`, `canary`, `stable`, `deprecated`.
@@ -208,6 +209,8 @@ Pattern nên có:
 
 Quy tắc retry: chỉ retry operation an toàn. Với tool có side effect như gửi email, tạo refund, update ticket, cần idempotency key và audit log trước khi retry.
 
+`Request queue` là hàng đợi đặt job giữa API và worker. API có thể trả `job_id` sớm, worker xử lý LLM call dài ở background. Queue giúp hấp thụ traffic burst và bảo vệ provider, nhưng phải có max depth, per-tenant fairness, deadline, dead-letter queue và backpressure; nếu không, hệ thống chỉ chuyển lỗi timeout thành backlog vô hạn.
+
 ## 8. Cache: Exact, Tool Result, Retrieval, Semantic
 
 Cache có thể giảm latency và cost rất mạnh, nhưng sai cache có thể gây data leak.
@@ -220,6 +223,8 @@ Cache có thể giảm latency và cost rất mạnh, nhưng sai cache có thể
 | Semantic cache | tenant, embedding(query), threshold, prompt version | FAQ public/high traffic | Sai ngữ cảnh, permission-sensitive answer |
 
 Production rule: cache key phải chứa `tenant_id`, `prompt_id`, `prompt_version`, `schema_version`, `model_id` và permission context nếu output phụ thuộc quyền truy cập.
+
+Cache key cũng phải chứa mọi config làm thay đổi output, ví dụ `temperature`, output token cap và tool/retrieval version. Không cache fallback response dưới key của primary model nếu bạn muốn request mới kiểm tra primary đã phục hồi; hoặc phải định nghĩa rõ cache theo logical route thay vì physical model.
 
 Không cache raw prompt/response chứa PII nếu chưa có policy rõ. Có thể chỉ cache metadata hoặc cache sau khi redaction.
 
@@ -254,6 +259,18 @@ Quota nên có nhiều lớp:
 - Max input tokens và max output tokens theo endpoint/task.
 - Budget alert trước khi hard limit.
 
+### Secret management
+
+`Secret` là credential nhạy cảm như provider API key, database password hoặc signing key. `Secret manager` là hệ thống lưu, phân quyền, rotate và audit việc đọc secret; environment variable chỉ là cơ chế đưa secret vào process, không phải nơi quản trị secret đầy đủ.
+
+Rule production:
+
+- Không hardcode secret trong source, prompt, image hoặc config commit vào Git.
+- Mỗi environment/provider dùng credential riêng, scope tối thiểu.
+- Adapter đọc secret lúc runtime; business code không nhận hoặc log secret.
+- Có rotation/revocation runbook và audit ai/service nào đã truy cập.
+- Không gửi secret vào model context, kể cả với mục đích "debug".
+
 ## 10. Audit Log Và Observability
 
 Audit log trả lời câu hỏi: "Ai đã làm gì, lúc nào, với model/prompt/tool nào, tốn bao nhiêu, kết quả policy ra sao?"
@@ -263,6 +280,7 @@ Audit event tối thiểu:
 ```json
 {
   "trace_id": "uuid",
+  "timestamp": "2026-05-10T09:30:00Z",
   "tenant_id": "tenant_a",
   "user_id_hash": "hash",
   "endpoint": "/chat",
@@ -397,8 +415,10 @@ Chạy local:
 ```bash
 cd lessions/day-20-llm-app-architecture-production
 pip install fastapi uvicorn pydantic
-uvicorn day20_orchestrator:app --reload --port 8000
+ENABLE_DEBUG_ENDPOINTS=1 uvicorn day20_orchestrator:app --reload --port 8000
 ```
+
+`ENABLE_DEBUG_ENDPOINTS=1` chỉ dành cho fault-injection lab. Không bật endpoint thay đổi trạng thái provider trên môi trường public.
 
 Gọi API:
 
@@ -416,6 +436,15 @@ curl -s http://127.0.0.1:8000/chat \
 ```
 
 Mục tiêu của skeleton không phải là gọi model thật, mà là làm rõ boundary production. Khi thay mock provider bằng OpenAI, Anthropic, Gemini, local vLLM hoặc provider nội bộ, bạn giữ lại orchestrator policy.
+
+Các giới hạn cố ý của skeleton:
+
+- Cache, quota, audit và provider state nằm trong memory, không chia sẻ giữa nhiều process và mất khi restart.
+- Chưa có auth/gateway thật, distributed rate limiter, durable audit sink, secret manager, circuit breaker hoặc queue.
+- Token count/cost chỉ là estimate; adapter thật phải lấy usage từ provider.
+- Structured output mới minh họa một schema đơn giản; production cần schema registry và semantic validation.
+
+Vì vậy file này là executable architecture lab, không phải service có thể deploy nguyên trạng.
 
 ## 15. Dùng Được Trong Production Không?
 

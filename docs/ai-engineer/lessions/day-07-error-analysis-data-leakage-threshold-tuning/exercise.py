@@ -374,9 +374,9 @@ def leakage_demo(df: pd.DataFrame) -> dict[str, float]:
 
     return {
         "clean_roc_auc": roc_auc_score(test_df[TARGET], clean_proba),
-        "clean_pr_auc": average_precision_score(test_df[TARGET], clean_proba),
+        "clean_average_precision": average_precision_score(test_df[TARGET], clean_proba),
         "leaked_roc_auc": roc_auc_score(test_df[TARGET], leaked_proba),
-        "leaked_pr_auc": average_precision_score(test_df[TARGET], leaked_proba),
+        "leaked_average_precision": average_precision_score(test_df[TARGET], leaked_proba),
     }
 
 
@@ -459,6 +459,7 @@ def predict_customer_churn(
     model_path = model_path or ARTIFACT_DIR / f"{MODEL_VERSION}.joblib"
     metadata_path = metadata_path or ARTIFACT_DIR / f"{MODEL_VERSION}.{THRESHOLD_VERSION}.metadata.json"
 
+    # Security boundary: only load artifacts produced by a trusted training pipeline.
     artifact = joblib.load(model_path)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     missing = [col for col in FEATURE_COLS if col not in input_json]
@@ -484,7 +485,7 @@ def regression_gate_report(
     min_contract_recall = float(contract_slice["recall"].min()) if not contract_slice.empty else 0.0
     gates = [
         ("roc_auc", test_metrics["roc_auc"], ">=", 0.70),
-        ("pr_auc", test_metrics["pr_auc"], ">=", 0.35),
+        ("average_precision", test_metrics["average_precision"], ">=", 0.35),
         ("recall", test_metrics["threshold_metrics"]["recall"], ">=", 0.65),
         ("precision", test_metrics["threshold_metrics"]["precision"], ">=", 0.25),
         ("predicted_positive_rate", test_metrics["threshold_metrics"]["predicted_positive_rate"], "<=", 0.60),
@@ -536,7 +537,7 @@ def main(write_artifacts: bool, enforce_gates: bool) -> None:
     test_threshold_metrics = threshold_metrics(test_df[TARGET], test_proba, chosen_threshold)
     test_metrics = {
         "roc_auc": roc_auc_score(test_df[TARGET], test_proba),
-        "pr_auc": average_precision_score(test_df[TARGET], test_proba),
+        "average_precision": average_precision_score(test_df[TARGET], test_proba),
         "brier_score": brier_score_loss(test_df[TARGET], test_proba),
         "threshold_metrics": test_threshold_metrics,
     }

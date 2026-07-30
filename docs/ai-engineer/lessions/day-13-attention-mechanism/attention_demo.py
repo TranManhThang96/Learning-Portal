@@ -23,6 +23,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
+        self.dropout_p = dropout_p
         self.qkv = nn.Linear(embed_dim, 3 * embed_dim)
         self.out_proj = nn.Linear(embed_dim, embed_dim)
         self.dropout = nn.Dropout(dropout_p)
@@ -76,11 +77,11 @@ class MultiHeadSelfAttention(nn.Module):
                 raise ValueError("each query must be allowed to attend to at least one key")
             scores = scores.masked_fill(~allowed, torch.finfo(scores.dtype).min)
 
-        weights = torch.softmax(scores, dim=-1)
-        weights = self.dropout(weights)
-        context = torch.matmul(weights, v)
+        attention_probs = torch.softmax(scores, dim=-1)
+        dropped_attention_probs = self.dropout(attention_probs)
+        context = torch.matmul(dropped_attention_probs, v)
         context = context.transpose(1, 2).contiguous().view(batch_size, seq_len, embed_dim)
-        return self.out_proj(context), weights
+        return self.out_proj(context), attention_probs
 
 
 def run_tests() -> None:

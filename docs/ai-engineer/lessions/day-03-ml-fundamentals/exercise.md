@@ -7,7 +7,7 @@ Bài này giúp bạn chạy một experiment ML gần production hơn toy examp
 - Có baseline bằng `DummyClassifier`.
 - Có split reproducible với `random_state` và `stratify`.
 - Có `Pipeline` để tránh preprocessing leakage.
-- Có nhiều metrics: accuracy, precision, recall, F1, ROC-AUC.
+- Có nhiều metrics: accuracy, precision, recall, F1, ROC-AUC và Average Precision.
 - Có đo training time và prediction time.
 - Có cross-validation để xem metric ổn định không.
 - Có câu hỏi production decision ở cuối.
@@ -28,7 +28,7 @@ Kiểm tra version:
 python3 -c "import sklearn; print(sklearn.__version__)"
 ```
 
-## 2. Experiment Script
+## 2. Starter Experiment Để Audit Và Mở Rộng
 
 Tạo file tạm, ví dụ `day03_experiment.py`, rồi chạy script dưới đây. Script này không lưu artifact để giữ bài tập gọn; trong production bạn sẽ lưu model bằng format phù hợp, kèm metadata về dataset/code/params/metrics.
 
@@ -46,12 +46,13 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import cross_validate, train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_validate, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -146,6 +147,7 @@ def evaluate_holdout(
         "recall": recall_score(y_test, y_pred, zero_division=0),
         "f1": f1_score(y_test, y_pred, zero_division=0),
         "roc_auc": roc_auc_score(y_test, y_score),
+        "average_precision": average_precision_score(y_test, y_score),
         "train_ms": train_ms,
         "predict_ms_per_1000_rows": predict_ms / len(X_test) * 1000,
     }
@@ -158,12 +160,14 @@ def evaluate_cross_validation(name: str, estimator, X: pd.DataFrame, y: pd.Serie
         "recall": "recall",
         "f1": "f1",
         "roc_auc": "roc_auc",
+        "average_precision": "average_precision",
     }
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     result = cross_validate(
         estimator,
         X,
         y,
-        cv=5,
+        cv=cv,
         scoring=scoring,
         return_train_score=True,
         n_jobs=None,
@@ -218,6 +222,7 @@ def main() -> None:
         "cv_test_f1_std",
         "cv_train_f1_mean",
         "cv_test_roc_auc_mean",
+        "cv_test_average_precision_mean",
         "cv_fit_time_ms_mean",
     ]
     print(cv_df[selected_columns].round(4).to_string(index=False))
@@ -227,49 +232,41 @@ if __name__ == "__main__":
     main()
 ```
 
-## 3. Vì Sao Script Này Gần Production Hơn?
+## 3. Nhiệm Vụ Audit Starter Code
 
-### Baseline rõ ràng
+Không chấp nhận code chỉ vì chạy được. Trước khi sửa model, hãy review starter theo checklist:
 
-`DummyClassifier(strategy="most_frequent")` cho biết nếu chỉ đoán class phổ biến nhất thì metric ra sao. Candidate model phải vượt baseline này theo metric quan trọng.
+### Baseline
 
-### Split có kỷ luật
+- Baseline đang dùng strategy nào?
+- Metric nào của candidate bắt buộc phải vượt baseline?
+- Majority baseline có thể có accuracy cao nhưng F1/recall gây hiểu nhầm thế nào?
 
-`train_test_split(..., stratify=y, random_state=RANDOM_STATE)` giúp:
+### Split và cross-validation
 
-- Giữ tỷ lệ class giữa train/test.
-- Có thể reproduce kết quả.
-- Tránh mỗi lần chạy ra một kết luận khác nhau.
+- `stratify` giải quyết vấn đề gì?
+- `random_state` giúp reproduce phần nào và không bảo đảm điều gì?
+- Với churn/fraud có timeline, bạn phải thay split/CV nào?
+- Với nhiều row cùng patient/customer, cần group split ra sao?
 
-Với bài toán có timeline thật, hãy thay random split bằng time-based split.
+### Leakage
 
-### Pipeline giảm leakage
+- Chứng minh scaler chỉ fit trên training fold.
+- Thử cố tình scale toàn dataset trước CV, ghi vì sao cách đó sai dù metric có thể đẹp hơn.
+- Liệt kê feature nào trong dataset business của bạn có thể chứa tương lai/target proxy.
 
-Logistic Regression dùng:
+### Metrics
 
-```python
-Pipeline(
-    steps=[
-        ("scaler", StandardScaler()),
-        ("model", LogisticRegression(...)),
-    ]
-)
-```
+- Chọn metric cho false negative đắt và giải thích.
+- Chọn metric cho false positive đắt và giải thích.
+- So sánh ROC-AUC với Average Precision khi positive class hiếm.
+- Nếu team chỉ xử lý top 100 cases/ngày, metric ranking/budget nào cần thêm?
 
-Scaler được fit cùng training fold, không fit trước trên toàn dataset. Đây là pattern quan trọng để tránh preprocessing leakage.
+### Performance
 
-### Metrics không chỉ accuracy
-
-Script in accuracy, precision, recall, F1 và ROC-AUC. Với class imbalance, accuracy thường đánh lừa. Trong production, chọn metric theo cost:
-
-- False negative đắt: ưu tiên recall.
-- False positive đắt: ưu tiên precision.
-- Cần rank case rủi ro: xem ROC-AUC/PR-AUC.
-- Cần action theo budget: xem precision@K hoặc recall@K.
-
-### Có timing
-
-`train_ms` và `predict_ms_per_1000_rows` chưa thay thế load test thật, nhưng giúp bạn bắt đầu nghĩ về performance. Model tốt hơn 0.5% F1 nhưng inference chậm gấp 20 lần chưa chắc là best solution.
+- Timing hiện tại đo warm hay cold path?
+- Cần thêm p50/p95/p99, batch size và memory measurement nào?
+- Chấp nhận tăng latency bao nhiêu cho mỗi mức cải thiện quality?
 
 ## 4. Nhiệm Vụ Cần Làm
 
@@ -285,12 +282,12 @@ Ghi lại:
 
 Tạo bảng quyết định:
 
-| Model | F1 | Recall | ROC-AUC | Predict time | Nhận xét |
-|---|---:|---:|---:|---:|---|
-| dummy_majority | | | | | |
-| logistic_regression | | | | | |
-| random_forest | | | | | |
-| hist_gradient_boosting | | | | | |
+| Model | F1 | Recall | ROC-AUC | Average Precision | Predict time | Nhận xét |
+|---|---:|---:|---:|---:|---:|---|
+| dummy_majority | | | | | | |
+| logistic_regression | | | | | | |
+| random_forest | | | | | | |
+| hist_gradient_boosting | | | | | | |
 
 Trả lời:
 

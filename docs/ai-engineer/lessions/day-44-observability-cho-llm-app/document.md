@@ -50,6 +50,7 @@ Nguyên tắc: app không phụ thuộc vào một tool duy nhất. App phát ra
 | `generation.ttft_ms` | number/null | Có | Null nếu không streaming và không đo được |
 | `generation.latency_ms` | number | Có | Model call latency |
 | `generation.estimated_cost_usd` | number | Có | Cost estimate theo pricing table version |
+| `generation.pricing_table_version` | string | Có | Version/effective date của bảng giá dùng để estimate |
 | `validation.citation_valid` | boolean | Có | Quality signal |
 | `result.status` | string | Có | `success`, `error`, `timeout`, `blocked` |
 | `result.total_latency_ms` | number | Có | End-to-end latency |
@@ -253,6 +254,7 @@ CREATE TABLE rag_traces (
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     estimated_cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+    pricing_table_version TEXT NOT NULL,
     ttft_ms INTEGER,
     total_latency_ms INTEGER NOT NULL,
     status TEXT NOT NULL,

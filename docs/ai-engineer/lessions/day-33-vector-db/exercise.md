@@ -54,7 +54,7 @@ CHUNKS = [
             "page_start": 1,
             "page_end": 1,
             "index_version": "dev-index-v1",
-            "deleted": "false",
+            "deleted": False,
         },
     },
     {
@@ -70,7 +70,7 @@ CHUNKS = [
             "page_start": 2,
             "page_end": 2,
             "index_version": "dev-index-v1",
-            "deleted": "false",
+            "deleted": False,
         },
     },
     {
@@ -86,7 +86,7 @@ CHUNKS = [
             "page_start": 1,
             "page_end": 1,
             "index_version": "dev-index-v1",
-            "deleted": "false",
+            "deleted": False,
         },
     },
 ]
@@ -97,6 +97,31 @@ Hãy tự thêm ít nhất 9 chunk nữa, gồm:
 - 3 chunk cho `company_a`, role `employee`.
 - 3 chunk cho `company_a`, role `admin` hoặc `finance`.
 - 3 chunk cho `company_b`.
+
+Đừng bỏ qua bước này: ba record mẫu ở trên chỉ là seed để dễ đọc. Benchmark và ACL test chỉ có ý nghĩa khi corpus có đủ dữ liệu gây nhiễu giữa tenant, role và document category.
+
+Thêm validation trước khi upsert để lỗi hiện ra sớm:
+
+```python
+def validate_dataset(chunks: list[dict]) -> None:
+    if len(chunks) < 12:
+        raise ValueError("Cần ít nhất 12 chunks để benchmark không quá toy.")
+
+    tenants = {item["metadata"]["tenant_id"] for item in chunks}
+    if {"company_a", "company_b"} - tenants:
+        raise ValueError("Dataset phải có cả company_a và company_b.")
+
+    company_a_roles = {
+        role
+        for item in chunks
+        if item["metadata"]["tenant_id"] == "company_a"
+        for role in item["metadata"]["acl_roles"]
+    }
+    if "employee" not in company_a_roles or not ({"finance", "admin"} & company_a_roles):
+        raise ValueError("company_a cần có ít nhất role employee và finance/admin.")
+```
+
+Gọi `validate_dataset(CHUNKS)` trước `upsert_chunks(CHUNKS)`.
 
 ## 3. Tạo collection
 
@@ -113,11 +138,17 @@ from qdrant_client.models import (
     PointStruct,
     VectorParams,
 )
+from uuid import UUID, uuid5
 
 COLLECTION = "day33_chunks"
 INDEX_VERSION = "dev-index-v1"
+POINT_ID_NAMESPACE = UUID("b9fd7a5f-ec35-4cb5-90ff-1f204c001cf0")
 
 client = QdrantClient(url="http://localhost:6333")
+
+
+def point_id_for_chunk(chunk_id: str) -> str:
+    return str(uuid5(POINT_ID_NAMESPACE, chunk_id))
 
 if COLLECTION not in {c.name for c in client.get_collections().collections}:
     client.create_collection(
@@ -127,13 +158,20 @@ if COLLECTION not in {c.name for c in client.get_collections().collections}:
         on_disk_payload=True,
     )
 
-for field in ["tenant_id", "acl_roles", "document_id", "index_version", "deleted"]:
+for field in ["tenant_id", "acl_roles", "document_id", "index_version"]:
     client.create_payload_index(
         collection_name=COLLECTION,
         field_name=field,
         field_schema=PayloadSchemaType.KEYWORD,
     )
+client.create_payload_index(
+    collection_name=COLLECTION,
+    field_name="deleted",
+    field_schema=PayloadSchemaType.BOOL,
+)
 ```
+
+Qdrant point ID chỉ nhận unsigned integer hoặc UUID. Hàm trên tạo UUID ổn định để upsert idempotent; business ID dễ đọc như `a:hr:leave:001` vẫn được giữ trong payload `chunk_id`.
 
 ## 4. Upsert dữ liệu
 
@@ -141,9 +179,13 @@ for field in ["tenant_id", "acl_roles", "document_id", "index_version", "deleted
 def upsert_chunks(chunks: list[dict]) -> None:
     points = [
         PointStruct(
-            id=item["id"],
+            id=point_id_for_chunk(item["id"]),
             vector=item["vector"],
-            payload={**item["metadata"], "text": item["text"]},
+            payload={
+                **item["metadata"],
+                "chunk_id": item["id"],
+                "text": item["text"],
+            },
         )
         for item in chunks
     ]
@@ -160,7 +202,7 @@ def search(query_vector: list[float], tenant_id: str, roles: list[str], limit: i
         must=[
             FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
             FieldCondition(key="index_version", match=MatchValue(value=INDEX_VERSION)),
-            FieldCondition(key="deleted", match=MatchValue(value="false")),
+            FieldCondition(key="deleted", match=MatchValue(value=False)),
             FieldCondition(key="acl_roles", match=MatchAny(any=roles)),
         ]
     )
@@ -170,7 +212,14 @@ def search(query_vector: list[float], tenant_id: str, roles: list[str], limit: i
         query=query_vector,
         query_filter=query_filter,
         limit=limit,
-        with_payload=["text", "tenant_id", "document_id", "acl_roles", "source_uri"],
+        with_payload=[
+            "chunk_id",
+            "text",
+            "tenant_id",
+            "document_id",
+            "acl_roles",
+            "source_uri",
+        ],
         with_vectors=False,
     )
     return response.points
@@ -181,7 +230,7 @@ Test thủ công:
 ```python
 results = search([0.90, 0.10, 0.00, 0.00], tenant_id="company_a", roles=["employee"])
 for point in results:
-    print(point.id, point.score, point.payload)
+    print(point.payload["chunk_id"], point.score, point.payload)
 ```
 
 Kỳ vọng:
@@ -301,8 +350,8 @@ Mark document finance là deleted:
 ```python
 client.set_payload(
     collection_name=COLLECTION,
-    payload={"deleted": "true"},
-    points=["a:finance:salary:001"],
+    payload={"deleted": True},
+    points=[point_id_for_chunk("a:finance:salary:001")],
     wait=True,
 )
 ```

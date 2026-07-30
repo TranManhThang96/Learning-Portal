@@ -6,7 +6,7 @@
 |---|---|---|
 | Token | Đơn vị text sau tokenizer | Cost/latency tính theo token, không phải word |
 | Tokenizer | Bộ mã hóa text thành token IDs | Phải khớp với model version |
-| Context window | Tổng token tối đa model nhìn thấy | Gồm cả input và output |
+| Context window | Ngân sách token model xử lý | Kiểm tra cả context limit và output cap riêng của model |
 | Logits | Điểm số model trả cho token kế tiếp | Decoding biến logits thành lựa chọn token |
 | Temperature | Điều chỉnh độ ngẫu nhiên | Thấp cho stability, cao cho creativity |
 | Top-p | Nucleus sampling theo probability mass | Dùng cẩn thận cùng temperature |
@@ -243,3 +243,12 @@ LLM có thể dùng trong production khi được treat như một external prob
 - Có observability: latency, tokens, cost, error, quality feedback.
 
 Nếu thiếu những điều kiện này, LLM vẫn có thể dùng cho prototype hoặc internal low-risk workflow, nhưng chưa nên tự động hóa quyết định quan trọng.
+
+## 11. Nguồn Kỹ Thuật Đã Xác Minh
+
+- Context7 `/websites/huggingface_co_transformers_main`: tokenization, truncation và generation controls của Transformers.
+- Context7 `/websites/developers_openai_api`: Responses API, sampling parameters, structured outputs và tool calling.
+- Hugging Face generation docs: <https://huggingface.co/docs/transformers/main/en/main_classes/text_generation>
+- OpenAI Responses API reference: <https://developers.openai.com/api/reference/responses/overview>
+
+Tên tham số không đồng nhất giữa runtime. Ví dụ OpenAI Responses API dùng `max_output_tokens`, trong khi Ollama `/api/generate` dùng `options.num_predict`. Khi đổi provider, adapter phải map về một field nội bộ ổn định thay vì để business code phụ thuộc tên SDK.

@@ -649,3 +649,11 @@ Task Day 16 là classification -> ưu tiên encoder-only -> BERT/PhoBERT-style m
 ```
 
 Decoder-only vẫn quan trọng cho các ngày sau về LLM application, RAG, tool calling và agent workflow.
+
+## Nguồn kỹ thuật và tài liệu nền
+
+- [Attention Is All You Need](https://arxiv.org/abs/1706.03762): kiến trúc encoder-decoder Transformer gốc.
+- [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/): trực quan hóa luồng attention và encoder-decoder.
+- [The Annotated Transformer](https://nlp.seas.harvard.edu/annotated-transformer/): mapping paper sang implementation.
+- PyTorch 2.12 docs qua Context7: `/websites/pytorch_2_12`, dùng để đối chiếu attention/Transformer API và mask behavior.
+- Model architecture thực tế có thể khác Transformer gốc về Pre-LN/Post-LN, RMSNorm, RoPE, gated FFN, grouped-query attention hoặc MoE. Luôn đọc config/model card đúng revision trước khi suy luận từ tên model family.

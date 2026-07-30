@@ -35,7 +35,16 @@ joblib>=1.3
 
 ## 3. Code Mẫu Hoàn Chỉnh
 
-Tạo file `src/churn_pipeline.py` trong project riêng của bạn. Code dưới đây cố ý viết theo style dễ tách module, có schema validation, pipeline, threshold tuning, artifact metadata và inference contract.
+Tạo package:
+
+```text
+src/
+  __init__.py
+  churn_pipeline.py
+  train_churn.py
+```
+
+Đặt code dưới đây trong `src/churn_pipeline.py`. File này là module importable, có schema validation, pipeline, threshold tuning, artifact metadata và inference contract.
 
 ```python
 from __future__ import annotations
@@ -178,7 +187,10 @@ def normalize_telco_frame(df: pd.DataFrame, require_target: bool) -> pd.DataFram
 
     if require_target:
         if not pd.api.types.is_numeric_dtype(df[TARGET_COL]):
-            df[TARGET_COL] = df[TARGET_COL].map({"Yes": 1, "No": 0, "yes": 1, "no": 0})
+            normalized_target = df[TARGET_COL].map(
+                lambda value: value.strip().lower() if isinstance(value, str) else value
+            )
+            df[TARGET_COL] = normalized_target.replace({"yes": 1, "no": 0})
         df[TARGET_COL] = pd.to_numeric(df[TARGET_COL], errors="coerce")
         if df[TARGET_COL].isna().any():
             raise ValueError("Target column contains values other than Yes/No or 1/0.")
@@ -414,7 +426,7 @@ def evaluate_predictions(y_true: pd.Series, proba: np.ndarray, threshold: float)
     y_pred = (proba >= threshold).astype(int)
     return {
         "roc_auc": float(roc_auc_score(y_true, proba)),
-        "pr_auc": float(average_precision_score(y_true, proba)),
+        "average_precision": float(average_precision_score(y_true, proba)),
         "threshold_metrics": asdict(threshold_metrics),
         "classification_report": classification_report(y_true, y_pred, output_dict=True, zero_division=0),
     }
@@ -556,7 +568,7 @@ def train_pipeline(
             {
                 "model_name": report["model_name"],
                 "threshold": report["threshold"],
-                "pr_auc": report["validation_metrics"]["pr_auc"],
+                "average_precision": report["validation_metrics"]["average_precision"],
                 "roc_auc": report["validation_metrics"]["roc_auc"],
                 "precision": report["validation_metrics"]["threshold_metrics"]["precision"],
                 "recall": report["validation_metrics"]["threshold_metrics"]["recall"],
@@ -565,7 +577,7 @@ def train_pipeline(
             }
             for report in model_reports
         ]
-    ).sort_values(["pr_auc", "f1"], ascending=False)
+    ).sort_values(["average_precision", "f1"], ascending=False)
 
     report_dir.mkdir(parents=True, exist_ok=True)
     leaderboard.to_csv(report_dir / "leaderboard.csv", index=False)
@@ -592,7 +604,10 @@ def train_pipeline(
         "error_analysis": error_report,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "python_version": platform.python_version(),
+        "numpy_version": np.__version__,
+        "pandas_version": pd.__version__,
         "sklearn_version": sklearn.__version__,
+        "joblib_version": joblib.__version__,
         "random_state": RANDOM_STATE,
         "training_rows": int(len(X_train)),
         "validation_rows": int(len(X_val)),
@@ -613,15 +628,18 @@ def train_pipeline(
     return metadata
 
 
-def risk_tier(probability: float) -> str:
-    if probability >= 0.70:
+def risk_tier(probability: float, decision_threshold: float) -> str:
+    if not 0.0 < decision_threshold < 1.0:
+        raise ValueError("decision_threshold must be between 0 and 1")
+    if probability >= decision_threshold:
         return "high"
-    if probability >= 0.40:
+    if probability >= decision_threshold * 0.75:
         return "medium"
     return "low"
 
 
 def predict_customer_churn(customer: dict[str, Any], artifact_path: Path) -> dict[str, Any]:
+    # Security boundary: only load artifacts produced by a trusted training pipeline.
     artifact = joblib.load(artifact_path)
     model: Pipeline = artifact["model"]
     metadata: dict[str, Any] = artifact["metadata"]
@@ -635,7 +653,7 @@ def predict_customer_churn(customer: dict[str, Any], artifact_path: Path) -> dic
         "customer_id": str(customer.get(ID_COL, "")),
         "churn_probability": round(probability, 4),
         "will_churn": bool(probability >= threshold),
-        "risk_tier": risk_tier(probability),
+        "risk_tier": risk_tier(probability, threshold),
         "threshold": threshold,
         "model_name": metadata["model_name"],
         "model_version": metadata["model_version"],
@@ -662,24 +680,32 @@ def main() -> None:
         synthetic_rows=args.synthetic_rows,
         min_recall=args.min_recall,
     )
+```
+
+Tạo `src/__init__.py` rỗng và `src/train_churn.py`:
+
+```python
+from src.churn_pipeline import main
 
 
 if __name__ == "__main__":
     main()
 ```
 
+Launcher import module bằng tên ổn định `src.churn_pipeline`. Điều này quan trọng vì artifact chứa custom transformer `TelcoFeatureBuilder`; nếu chạy file định nghĩa class trực tiếp, pickle có thể ghi class dưới module `__main__` và process inference khác không load được.
+
 ## 4. Chạy Training
 
 Không có CSV:
 
 ```bash
-python src/churn_pipeline.py
+python -m src.train_churn
 ```
 
 Có Telco CSV:
 
 ```bash
-python src/churn_pipeline.py --csv data/telco_customer_churn.csv
+python -m src.train_churn --csv data/telco_customer_churn.csv
 ```
 
 Kết quả mong đợi:
@@ -704,7 +730,7 @@ Sau khi train xong:
 ```python
 from pathlib import Path
 
-from churn_pipeline import predict_customer_churn
+from src.churn_pipeline import predict_customer_churn
 
 
 customer = {
@@ -776,11 +802,13 @@ Response cần có dạng:
 
 1. Vì sao `TelcoFeatureBuilder` nằm trong `Pipeline` thay vì gọi thủ công ở notebook?
 2. Vì sao threshold được tune trên validation set, không phải test set?
-3. Nếu model có PR-AUC cao nhưng recall thấp tại threshold đã chọn, bạn xử lý thế nào?
+3. Nếu model có Average Precision cao nhưng recall thấp tại threshold đã chọn, bạn xử lý thế nào?
 4. `OneHotEncoder(handle_unknown="ignore")` giải quyết vấn đề gì và không giải quyết vấn đề gì?
 5. Nếu service nhận category mới liên tục, bạn monitor metric nào?
-6. Nếu Random Forest tốt hơn Logistic Regression 0.5 điểm PR-AUC nhưng latency p95 gấp 20 lần, bạn chọn gì trong batch scoring và realtime API?
+6. Nếu Random Forest tốt hơn Logistic Regression 0.5 điểm AP nhưng latency p95 gấp 20 lần, bạn chọn gì trong batch scoring và realtime API?
 7. Điều kiện nào còn thiếu trước khi gọi pipeline này là production-ready?
+8. Vì sao không được nhận file `.joblib` từ user rồi load trực tiếp trong service?
+9. Vì sao training launcher phải import module chứa custom transformer thay vì chạy file đó trực tiếp?
 
 ## 8. Tiêu Chí Chấm
 
@@ -790,10 +818,9 @@ Response cần có dạng:
 | EDA | Có target distribution, missing, segment churn rate |
 | Pipeline | Có `Pipeline`, `ColumnTransformer`, transformer chung training/inference |
 | Models | Ít nhất 3 models, có Logistic Regression baseline |
-| Metrics | Có ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix |
+| Metrics | Có ROC-AUC, Average Precision, precision, recall, F1, confusion matrix |
 | Threshold | Tune trên validation set, có business objective |
 | Error analysis | Có FP/FN và slice metrics |
 | Artifact | Save model + metadata + threshold + schema |
 | Inference | Function nhận `dict`, trả contract rõ ràng |
 | Production notes | Có trade-off, limitation, monitoring, rollback |
-

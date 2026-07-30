@@ -1,10 +1,9 @@
 # Day 1: AI Mindset cho Senior SE
 
-Bài học đã được tách thành folder riêng để dễ học, dễ bảo trì và dễ mở rộng.
+Bắt đầu từ bài học chính; hai file còn lại chỉ phục vụ tra cứu và thực hành.
 
 ## Nội dung
 
-- [Lession](./day-01-ai-mindset-cho-senior-se/lession.md): lộ trình học trong ngày, mục tiêu, checklist và production answer.
-- [Document](./day-01-ai-mindset-cho-senior-se/document.md): phần giải thích chi tiết về rule-based, ML, Deep Learning, LLM, RAG, trade-off và production concerns.
-- [Exercise](./day-01-ai-mindset-cho-senior-se/exercise.md): bài thực hành phân tích 5 bài toán thực tế theo mindset production.
-
+- [Lession](./day-01-ai-mindset-cho-senior-se/lession.md): toàn bộ nội dung giảng dạy từ khái niệm đến architecture và production readiness.
+- [Document](./day-01-ai-mindset-cho-senior-se/document.md): decision reference, glossary và checklist tra cứu.
+- [Exercise](./day-01-ai-mindset-cho-senior-se/exercise.md): 5 bài design exercise, không kèm đáp án hoàn chỉnh.

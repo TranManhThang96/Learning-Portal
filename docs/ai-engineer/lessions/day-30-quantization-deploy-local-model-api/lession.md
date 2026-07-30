@@ -267,6 +267,8 @@ FastAPI gateway thêm giá trị:
 
 Theo docs FastAPI hiện tại, nên dùng Pydantic model cho validation/response filtering, `response_model` cho OpenAPI contract, `HTTPException` cho lỗi có kiểm soát, và lifespan cho startup/shutdown hoặc readiness state.
 
+Một điểm dễ nhầm: memory đo trong FastAPI gateway chỉ là memory của process gateway. Nó không phải VRAM/RAM của Ollama, llama.cpp hoặc vLLM đang load model. Muốn quyết định production, vẫn phải đo runtime model riêng bằng `nvidia-smi`, metric exporter, `ollama ps`, `ps/top` theo PID runtime hoặc log của serving engine.
+
 ## 10. FastAPI Template Gần Production
 
 Template đầy đủ hơn nằm trong `document.md`. Đây là skeleton quan trọng:
@@ -298,12 +300,12 @@ class Settings(BaseModel):
     model: str = os.getenv("LOCAL_LLM_MODEL", "llama3.2")
     runtime: str = os.getenv("LOCAL_LLM_RUNTIME", "ollama")
     request_timeout_s: float = float(os.getenv("REQUEST_TIMEOUT_S", "60"))
+    queue_timeout_s: float = float(os.getenv("QUEUE_TIMEOUT_S", "2"))
     max_concurrency: int = int(os.getenv("MAX_CONCURRENCY", "4"))
 
 
 settings = Settings()
 semaphore = asyncio.Semaphore(settings.max_concurrency)
-ready_state = {"ready": False, "last_error": None}
 
 
 class ChatRequest(BaseModel):
@@ -322,7 +324,7 @@ class ChatResponse(BaseModel):
     trace_id: str
 
 
-async def call_openai_compatible(req: ChatRequest) -> str:
+async def call_openai_compatible(client: httpx.AsyncClient, req: ChatRequest) -> str:
     headers = {"Authorization": f"Bearer {settings.api_key}"}
     payload: dict[str, Any] = {
         "model": settings.model,
@@ -333,28 +335,42 @@ async def call_openai_compatible(req: ChatRequest) -> str:
         "temperature": req.temperature,
         "max_tokens": req.max_tokens,
     }
-    timeout = httpx.Timeout(settings.request_timeout_s)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            f"{settings.runtime_base_url.rstrip('/')}/chat/completions",
-            headers=headers,
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"] or ""
+    response = await client.post(
+        f"{settings.runtime_base_url.rstrip('/')}/chat/completions",
+        headers=headers,
+        json=payload,
+    )
+    response.raise_for_status()
+    data = response.json()
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("runtime response does not match chat completion contract") from exc
+    if not isinstance(content, str):
+        raise ValueError("runtime response content must be a string")
+    return content
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.request_timeout_s),
+        limits=httpx.Limits(
+            max_connections=settings.max_concurrency,
+            max_keepalive_connections=settings.max_concurrency,
+        ),
+    )
+    app.state.http_client = client
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            await client.get(f"{settings.runtime_base_url.rstrip('/')}/models")
-        ready_state["ready"] = True
+        response = await client.get(
+            f"{settings.runtime_base_url.rstrip('/')}/models",
+            timeout=5,
+        )
+        response.raise_for_status()
     except Exception as exc:
-        ready_state["last_error"] = str(exc)
         logger.warning(json.dumps({"event": "model_runtime_not_ready", "error": str(exc)}))
     yield
+    await client.aclose()
 
 
 app = FastAPI(title="Local Model API", version="1.0.0", lifespan=lifespan)
@@ -366,9 +382,18 @@ async def health():
 
 
 @app.get("/ready")
-async def ready():
-    if not ready_state["ready"]:
-        raise HTTPException(status_code=503, detail=ready_state)
+async def ready(request: Request):
+    try:
+        response = await request.app.state.http_client.get(
+            f"{settings.runtime_base_url.rstrip('/')}/models",
+            timeout=5,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"trace_id": "readiness", "error": type(exc).__name__},
+        ) from exc
     return {"status": "ready", "model": settings.model, "runtime": settings.runtime}
 
 
@@ -377,18 +402,33 @@ async def chat(req: ChatRequest, request: Request):
     trace_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     start = time.perf_counter()
 
+    acquired = False
     try:
-        async with semaphore:
-            answer = await asyncio.wait_for(
-                call_openai_compatible(req),
-                timeout=settings.request_timeout_s + 2,
-            )
-    except TimeoutError as exc:
-        raise HTTPException(status_code=504, detail={"trace_id": trace_id, "error": "timeout"}) from exc
+        await asyncio.wait_for(semaphore.acquire(), timeout=settings.queue_timeout_s)
+        acquired = True
+        answer = await asyncio.wait_for(
+            call_openai_compatible(request.app.state.http_client, req),
+            timeout=settings.request_timeout_s + 1,
+        )
+    except asyncio.TimeoutError as exc:
+        status_code = 504 if acquired else 503
+        error = "model timeout" if acquired else "queue timeout"
+        raise HTTPException(
+            status_code=status_code,
+            detail={"trace_id": trace_id, "error": error},
+        ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail={"trace_id": trace_id, "error": str(exc)}) from exc
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"trace_id": trace_id, "error": "invalid runtime response"},
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail={"trace_id": trace_id, "error": type(exc).__name__}) from exc
+    finally:
+        if acquired:
+            semaphore.release()
 
     latency_ms = (time.perf_counter() - start) * 1000
     memory_rss_mb = psutil.Process().memory_info().rss / 1024 / 1024
@@ -420,6 +460,14 @@ async def chat(req: ChatRequest, request: Request):
 ```
 
 Đây vẫn là gateway mẫu, chưa phải toàn bộ platform. Production thật cần thêm auth, rate limit, redaction, metrics exporter, container health policy, canary và deployment manifest.
+
+Trong response mẫu, `memory_rss_mb` chỉ giúp bạn thấy gateway có leak hoặc tăng bất thường. Không dùng field này để kết luận model có fit GPU/RAM hay không.
+
+Ba chi tiết không nên bỏ khi materialize code:
+
+- Tạo `httpx.AsyncClient` một lần trong lifespan để tái sử dụng connection pool.
+- `/ready` phải probe runtime hiện tại; boolean set lúc startup sẽ stale nếu model server chết sau đó.
+- Concurrency limit cần queue timeout và trả `503` khi quá tải, không để request chờ vô hạn.
 
 ## 11. Benchmark Latency Và Memory
 

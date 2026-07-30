@@ -10,7 +10,7 @@ Kết thúc bài này, bạn cần làm được:
 - Dùng Telco Customer Churn hoặc dataset tương đương để thực hiện EDA.
 - Thiết kế feature engineering không gây data leakage.
 - Train và so sánh ít nhất 3 models: Logistic Regression baseline, Random Forest, Gradient Boosting.
-- Đánh giá bằng nhiều metrics: ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix và latency.
+- Đánh giá bằng nhiều metrics: ROC-AUC, Average Precision, precision, recall, F1, confusion matrix và latency.
 - Tune threshold theo mục tiêu business thay vì dùng mặc định `0.5`.
 - Làm error analysis trên false positives, false negatives và từng customer segment.
 - Save model artifact kèm metadata, threshold, schema và metrics.
@@ -43,7 +43,7 @@ Best default cho Day 8:
 - Dùng `OneHotEncoder(handle_unknown="ignore")` cho category mới ở inference.
 - Dùng Logistic Regression làm baseline bắt buộc.
 - So sánh với Random Forest và Gradient Boosting.
-- Chọn model theo PR-AUC, F1 tại threshold đã tune, latency và explainability.
+- Chọn model theo Average Precision, F1 tại threshold đã tune, latency và explainability.
 - Nếu score cải thiện không đáng kể, ưu tiên baseline đơn giản hơn cho v1.
 
 ## Dùng Được Trong Production Không?
@@ -57,6 +57,8 @@ Có thể dùng làm v1 production nếu thỏa các điều kiện sau:
 - Có schema validation trước training và inference.
 - Threshold được chọn theo cost FP/FN hoặc mục tiêu business như recall tối thiểu.
 - Artifact lưu model, threshold, feature schema, package versions, training date, metrics và limitation.
+- Artifact `joblib` chỉ được load từ nguồn tin cậy; pickle-based format có thể thực thi code và không bảo đảm tương thích giữa các version scikit-learn.
+- Custom transformer phải nằm trong module importable ổn định; chạy training qua launcher riêng để artifact không tham chiếu class dưới `__main__`.
 - Có monitoring: input null rate, unknown category rate, prediction distribution, positive rate, latency, drift và business outcome.
 - Có quy trình rollback model và đánh giá định kỳ.
 
@@ -177,7 +179,7 @@ Checklist EDA:
 
 Ví dụ interpretation:
 
-- Nếu churn rate rất thấp, PR-AUC quan trọng hơn ROC-AUC.
+- Nếu churn rate rất thấp, Precision-Recall curve và Average Precision thường hữu ích hơn ROC-AUC.
 - Nếu `Contract=Month-to-month` có churn rate cao, đây là segment cần error analysis riêng.
 - Nếu `TotalCharges` missing chủ yếu ở `tenure=0`, missing không hẳn là lỗi, có thể mang ý nghĩa nghiệp vụ.
 
@@ -211,7 +213,7 @@ Best solution: để feature engineering deterministic nằm trong `Pipeline` ho
 
 Trade-off thực tế:
 
-- Nếu Logistic Regression kém PR-AUC 1-2 điểm nhưng nhanh, dễ debug và đủ đáp ứng business, chọn Logistic Regression cho v1.
+- Nếu Logistic Regression kém Average Precision 1-2 điểm nhưng nhanh, dễ debug và đủ đáp ứng business, chọn Logistic Regression cho v1.
 - Nếu Gradient Boosting cải thiện recall ở cùng precision rõ ràng, có thể chọn Gradient Boosting.
 - Nếu Random Forest artifact lớn và p99 latency cao trong API synchronous, dùng batch scoring thay vì realtime.
 
@@ -224,7 +226,7 @@ Metrics cần report:
 | Metric | Dùng để trả lời | Lưu ý |
 |---|---|---|
 | ROC-AUC | Model rank positive cao hơn negative tốt không? | Có thể lạc quan khi positive class nhỏ |
-| PR-AUC | Trong các case model cho điểm cao, positive thật nhiều không? | Hữu ích cho churn/retention |
+| Average Precision | Model duy trì precision thế nào khi recall tăng? | Hữu ích cho churn/retention |
 | Precision | Gửi campaign cho người được flag thì bao nhiêu người thật sự churn? | Liên quan cost FP |
 | Recall | Bắt được bao nhiêu churners thật? | Liên quan cost FN |
 | F1 | Cân bằng precision/recall | Không thay thế business cost |
@@ -353,7 +355,7 @@ Intended use: prioritize retention outreach
 Not intended use: fully automated denial, pricing discrimination
 Training data: Telco Customer Churn or equivalent
 Target: churn in defined horizon
-Primary metric: PR-AUC + recall at selected threshold
+Primary metric: Average Precision + recall at selected threshold
 Threshold: chosen on validation set
 Known limitations: offline dataset, no live feedback, possible segment bias
 Monitoring: input drift, score drift, outcome drift, latency
@@ -368,11 +370,12 @@ Monitoring: input drift, score drift, outcome drift, latency
 - [ ] Dùng `Pipeline` và `ColumnTransformer`.
 - [ ] Dùng `OneHotEncoder(handle_unknown="ignore")`.
 - [ ] Train ít nhất 3 models.
-- [ ] Report ROC-AUC, PR-AUC, precision, recall, F1, confusion matrix.
+- [ ] Report ROC-AUC, Average Precision, precision, recall, F1, confusion matrix.
 - [ ] Tune threshold trên validation set.
 - [ ] Đánh giá cuối trên test set.
 - [ ] Có error analysis FP/FN và slice metrics.
 - [ ] Save artifact bằng `joblib`.
+- [ ] Chỉ load artifact tin cậy và có test tương thích dependency.
 - [ ] Artifact có metadata.
 - [ ] Có inference function trả probability, decision, threshold và risk tier.
 - [ ] Có performance measurement.
@@ -384,6 +387,7 @@ Monitoring: input drift, score drift, outcome drift, latency
 - Dùng test set để chọn threshold.
 - Chỉ report accuracy.
 - Save model nhưng quên save threshold.
+- Pickle custom transformer từ file chạy trực tiếp, khiến artifact tham chiếu module `__main__` và không load được ở service.
 - Training có feature engineering, inference lại không có.
 - Không xử lý category mới ở production.
 - Dùng `customerID` làm feature.
@@ -394,10 +398,9 @@ Monitoring: input drift, score drift, outcome drift, latency
 ## Tự Kiểm Tra
 
 1. Vì sao cần validation set riêng cho threshold tuning?
-2. Khi nào PR-AUC quan trọng hơn ROC-AUC?
+2. Khi nào Precision-Recall curve và Average Precision quan trọng hơn ROC-AUC?
 3. Nếu Gradient Boosting tốt hơn Logistic Regression rất ít, bạn chọn model nào cho v1 và vì sao?
 4. Artifact cần lưu gì ngoài model object?
 5. Nếu inference input có category mới chưa từng thấy, pipeline nên xử lý thế nào?
 6. Vì sao batch scoring thường hợp lý hơn realtime API cho churn?
 7. Điều kiện tối thiểu để gọi pipeline này là production-ready là gì?
-

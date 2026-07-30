@@ -1,8 +1,8 @@
 # Day 3: ML Fundamentals
 
-Bài học đã được tách thành folder riêng để dễ học, thực hành và tra cứu:
+Bắt đầu từ bài học chính; tài liệu chỉ để tra cứu và exercise chỉ phục vụ thực hành:
 
-- [Bài học chính](./day-03-ml-fundamentals/lession.md)
+- [Bài học chính](./day-03-ml-fundamentals/lession.md): đầy đủ problem types, split, leakage, bias-variance và 7 model families bắt buộc.
 - [Tài liệu thuật toán và model selection](./day-03-ml-fundamentals/document.md)
 - [Bài thực hành experiment](./day-03-ml-fundamentals/exercise.md)
 

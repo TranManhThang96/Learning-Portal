@@ -40,6 +40,8 @@ curl -s -X POST http://localhost:8019/extract \
   -d '{"tenant_id":"acme","user_id":"u-123","text":"Khách cần hoàn tiền gấp cho đơn ORDER-123 vì giao trễ"}'
 ```
 
+`X-Request-Id` là header bắt buộc, dài 8-128 ký tự. Gateway production nên tạo hoặc validate request ID; không dùng một default cố định vì các request độc lập có thể bị xem nhầm là retry.
+
 Gọi tool execution:
 
 ```bash

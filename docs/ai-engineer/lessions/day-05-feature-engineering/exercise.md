@@ -20,7 +20,7 @@ Bạn sẽ tạo pipeline với:
 - Validation: check required columns, non-negative charge, prediction time hợp lệ.
 - Leakage checks: không dùng event sau `prediction_time`.
 
-## 3. Full Example
+## 3. Starter Project Để Chạy, Audit Và Mở Rộng
 
 ```python
 from __future__ import annotations
@@ -33,10 +33,9 @@ from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import average_precision_score, classification_report, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, RobustScaler
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, RobustScaler
 
 
 RAW_REQUIRED_COLUMNS = [
@@ -54,7 +53,10 @@ RAW_REQUIRED_COLUMNS = [
 
 def build_sample_data(n: int = 2_000, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    prediction_time = pd.Timestamp("2026-05-01", tz="UTC")
+    prediction_time = (
+        pd.Timestamp("2026-01-01", tz="UTC")
+        + pd.to_timedelta(rng.integers(0, 180, size=n), unit="D")
+    )
 
     signup_days_ago = rng.integers(30, 1_500, size=n)
     last_login_days_ago = rng.integers(0, 180, size=n).astype(float)
@@ -154,6 +156,11 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
+    validate_raw_schema(df)
+    return add_time_features(df)
+
+
 def build_model_pipeline() -> Pipeline:
     numeric_features = [
         "monthly_charges",
@@ -185,36 +192,64 @@ def build_model_pipeline() -> Pipeline:
     ])
 
     return Pipeline([
+        ("feature_builder", FunctionTransformer(prepare_features, validate=False)),
         ("preprocess", preprocessor),
         ("classifier", LogisticRegression(max_iter=1_000, class_weight="balanced")),
     ])
 
 
+def chronological_split(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ordered = df.sort_values(["prediction_time", "customer_id"]).reset_index(drop=True)
+    train_end = int(len(ordered) * 0.70)
+    valid_end = int(len(ordered) * 0.85)
+    train = ordered.iloc[:train_end].copy()
+    valid = ordered.iloc[train_end:valid_end].copy()
+    test = ordered.iloc[valid_end:].copy()
+
+    if train.empty or valid.empty or test.empty:
+        raise ValueError("train, validation and test splits must be non-empty")
+    if train["prediction_time"].max() > valid["prediction_time"].min():
+        raise ValueError("training data overlaps future validation time")
+    if valid["prediction_time"].max() > test["prediction_time"].min():
+        raise ValueError("validation data overlaps future test time")
+    return train, valid, test
+
+
+def print_metrics(name: str, model: Pipeline, X: pd.DataFrame, y: pd.Series) -> None:
+    y_pred = model.predict(X)
+    y_prob = model.predict_proba(X)[:, 1]
+    print(f"\n{name}:")
+    print(classification_report(y, y_pred))
+    print("ROC-AUC:", round(roc_auc_score(y, y_prob), 4))
+    print("Average Precision:", round(average_precision_score(y, y_prob), 4))
+
+
 def train_and_evaluate() -> Pipeline:
     df = build_sample_data()
-    validate_raw_schema(df)
-    df = add_time_features(df)
-
-    X = df.drop(columns=["churn"])
-    y = df["churn"]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y,
-    )
+    train_df, valid_df, test_df = chronological_split(df)
+    X_train = train_df.drop(columns=["churn"])
+    y_train = train_df["churn"]
+    X_valid = valid_df.drop(columns=["churn"])
+    y_valid = valid_df["churn"]
+    X_test = test_df.drop(columns=["churn"])
+    y_test = test_df["churn"]
 
     model = build_model_pipeline()
     model.fit(X_train, y_train)
+    print_metrics("Validation metrics for feature decisions", model, X_valid, y_valid)
 
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
-    print(classification_report(y_test, y_pred))
-    print("ROC-AUC:", round(roc_auc_score(y_test, y_prob), 4))
+    # After feature/scaler choices are finalized on validation, refit once on
+    # train + validation and evaluate the latest time window exactly once.
+    final_train = pd.concat([train_df, valid_df], ignore_index=True)
+    X_final_train = final_train.drop(columns=["churn"])
+    y_final_train = final_train["churn"]
+    model = build_model_pipeline()
+    model.fit(X_final_train, y_final_train)
+    print_metrics("Final test metrics", model, X_test, y_test)
 
-    transformed_shape = model.named_steps["preprocess"].transform(X_test).shape
+    transformed_shape = model[:-1].transform(X_test).shape
     print("Transformed shape:", transformed_shape)
 
     joblib.dump(model, "day05_churn_pipeline.joblib")
@@ -227,13 +262,14 @@ if __name__ == "__main__":
 
 ## 4. Bài Tập Bắt Buộc
 
-1. Chạy baseline và ghi lại ROC-AUC.
-2. Thay `RobustScaler` bằng `StandardScaler`, so sánh metric và giải thích vì sao khác hoặc không khác.
-3. Bỏ text feature khỏi `ColumnTransformer`, đo lại ROC-AUC và transformed shape.
+1. Chạy baseline và ghi lại validation ROC-AUC cùng Average Precision.
+2. Thay `RobustScaler` bằng `StandardScaler`, chỉ so sánh validation metrics và giải thích vì sao khác hoặc không khác.
+3. Bỏ text feature khỏi `ColumnTransformer`, đo lại validation ROC-AUC và transformed shape.
 4. Thêm feature `is_inactive_30d = days_since_last_login > 30`. Feature này nên là numerical hay categorical? Vì sao?
 5. Tạo 5 row inference giả lập có category mới `payment_method = "crypto"`. Pipeline có crash không? Bạn sẽ monitor gì?
 6. Viết test nhỏ để đảm bảo `last_login_at > prediction_time` bị reject.
-7. Thay `train_test_split` bằng time-based split nếu dataset có nhiều `prediction_time`. Giải thích khi nào stratified random split là không đủ.
+7. Thay tỷ lệ split `70/15/15` bằng hai cutoff date do bạn tự chọn. Chứng minh `max(train_time) <= min(validation_time) <= min(test_time)`.
+8. Chọn pipeline cuối từ validation, refit trên train + validation rồi chỉ đọc test metrics một lần.
 
 ## 5. Câu Hỏi Review
 
@@ -259,8 +295,9 @@ Các test tối thiểu:
 
 Tạo một file ghi chú ngắn gồm:
 
-- Baseline ROC-AUC.
+- Baseline validation ROC-AUC và Average Precision.
 - 3 thay đổi bạn thử và kết quả.
 - 3 leakage risks bạn đã kiểm tra.
 - 5 validation rules cho inference input.
 - Kết luận production readiness.
+- Final test metrics của đúng một pipeline đã chọn.

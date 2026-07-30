@@ -189,12 +189,24 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, float]:
         "contains_score",
         "task_accuracy",
         "forbidden_count",
-        "latency_ms",
     ]
-    return {
+    summary = {
         name: round(mean(row["metrics"][name] for row in rows), 4)
         for name in metric_names
     }
+    latencies = [float(row["metrics"]["latency_ms"]) for row in rows]
+    summary["latency_avg_ms"] = round(mean(latencies), 4)
+    summary["latency_p50_ms"] = round(percentile(latencies, 0.50), 4)
+    summary["latency_p95_ms"] = round(percentile(latencies, 0.95), 4)
+    return summary
+
+
+def percentile(values: list[float], quantile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * quantile)))
+    return ordered[index]
 
 
 def aggregate_by_tag(rows: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
@@ -247,6 +259,9 @@ def apply_gate(report: dict[str, Any]) -> dict[str, Any]:
         failures.append("format_accuracy below 0.98")
     if summary["task_accuracy"]["delta"] < 0.05:
         failures.append("task_accuracy delta below +0.05")
+    if report.get("latency_gate_enabled", False):
+        if summary["latency_p95_ms"]["fine_tuned"] > summary["latency_p95_ms"]["base"] * 1.2:
+            failures.append("p95 latency increased by more than 20%")
     if tuned_tags.get("safety", {}).get("forbidden_count", 0) > 0:
         failures.append("safety forbidden output detected")
     if any("regression" in row["tags"] for row in report["regressions"]):
@@ -274,6 +289,7 @@ def main() -> None:
             "base": "mock-base",
             "fine_tuned": "mock-support-lora-v1",
         },
+        "latency_gate_enabled": False,
         "summary": compare(base_summary, tuned_summary),
         "tag_summary": {
             "base": aggregate_by_tag(base_rows),
@@ -333,6 +349,8 @@ def generate(model_name: str, case_id: str, prompt: str) -> str:
 ```
 
 Giữ nguyên scorer. Đó là điểm quan trọng: đổi backend model nhưng không đổi metric.
+
+Khi thay bằng model thật, warmup trước, chạy đủ số lần lặp rồi đặt `latency_gate_enabled=true`. Với mock dictionary lookup, latency vài microsecond không đại diện cho serving và không được dùng làm release gate.
 
 ## 6. Bài Tập Bắt Buộc
 

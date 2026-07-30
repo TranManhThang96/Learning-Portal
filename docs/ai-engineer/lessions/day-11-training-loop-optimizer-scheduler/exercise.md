@@ -29,7 +29,7 @@ pip install torch
 Chạy script có sẵn trong folder bài học:
 
 ```bash
-python lessions/day-11-training-loop-optimizer-scheduler/day11_training_loop.py
+python3 lessions/day-11-training-loop-optimizer-scheduler/day11_training_loop.py
 ```
 
 Nếu có CUDA GPU, script tự dùng GPU. Nếu không có, script chạy CPU.
@@ -368,7 +368,7 @@ def main() -> None:
     )
 
     amp_enabled = cfg.use_amp and device.type == "cuda"
-    scaler = torch.amp.GradScaler(device="cuda", enabled=amp_enabled)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
 
     log_event(
         "run_started",

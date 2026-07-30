@@ -94,6 +94,8 @@ effective_cost_per_request =
 + raw_cost_per_request * retry_rate
 ```
 
+Dòng retry ở trên là approximation cho capacity planning, giả định mỗi retry tốn gần một request đầy đủ. Với trace/billing thật, phải cộng usage của từng attempt; không nhân lại nếu `usage` đã là tổng mọi attempt.
+
 Yêu cầu:
 
 - Tính `cost_per_request` và `cost_per_day` cho scenario 1k.
@@ -450,7 +452,7 @@ python scripts/calc_cost_from_traces.py \
 Input trace tối thiểu:
 
 ```json
-{"trace_id":"tr_001","tenant_id":"tenant_a","feature":"rag_query","request_type":"normal_rag","pricing_version":"provider-pricing-2026-05-10","models":{"generator":"llm-medium","embedding":"embedding-small","reranker":"reranker-base"},"usage":{"prompt_tokens":4200,"cached_prompt_tokens":1800,"completion_tokens":520,"embedding_tokens":32,"rerank_units":24},"cache":{"semantic_cache_hit":false},"retry":{"count":0}}
+{"trace_id":"tr_001","tenant_id":"tenant_a","feature":"rag_query","request_type":"normal_rag","pricing_version":"provider-pricing-2026-05-10","usage_includes_retries":true,"models":{"generator":"llm-medium","embedding":"embedding-small","reranker":"reranker-base"},"usage":{"prompt_tokens":4200,"cached_prompt_tokens":1800,"completion_tokens":520,"embedding_tokens":32,"rerank_units":24},"cache":{"semantic_cache_hit":false},"retry":{"count":0}}
 ```
 
 Output CSV tối thiểu:
@@ -464,6 +466,7 @@ Yêu cầu script:
 
 - Không double-count cached prompt tokens.
 - Tính semantic cache hit cost khác non-cache request.
+- Fail nếu `retry.count > 0` nhưng trace không xác nhận usage đã cộng dồn mọi attempt.
 - Group by tenant/feature/request_type/model.
 - Fail nếu thiếu pricing cho model.
 - Có test case cho retry và batch multiplier.

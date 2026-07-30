@@ -64,6 +64,7 @@ Schema tối thiểu:
   "question": "Nhân viên full-time được nghỉ phép năm bao nhiêu ngày?",
   "expected_answer": "Nhân viên full-time được nghỉ 12 ngày phép năm.",
   "expected_chunk_ids": ["hr_leave_policy:v2026-01:chunk_003"],
+  "forbidden_chunk_ids": [],
   "relevance": {
     "hr_leave_policy:v2026-01:chunk_003": 3,
     "hr_leave_policy:v2026-01:chunk_004": 1
@@ -87,6 +88,7 @@ Các field nên có trong production:
 | `question` | Query thật hoặc query đã review |
 | `expected_answer` | Dùng cho answer correctness và human review |
 | `expected_chunk_ids` | Dùng cho retrieval metrics |
+| `forbidden_chunk_ids` | Chunk tuyệt đối không được xuất hiện với auth context này |
 | `relevance` | Dùng cho NDCG khi có nhiều mức liên quan |
 | `must_cite` | Dùng cho citation gate |
 | `difficulty` | Dễ thấy model fail ở easy/medium/hard |
@@ -94,6 +96,18 @@ Các field nên có trong production:
 | `user_context` | Test tenant/role/permission-aware retrieval |
 | `expected_behavior` | `answer`, `abstain`, `permission_denied`, `escalate` |
 | `notes` | Lý do label, edge case, nguồn review |
+
+Với case `permission_denied`, không đặt tài liệu bí mật vào `expected_chunk_ids`. Nếu làm vậy, một retriever an toàn sẽ bị chấm là retrieval miss. Hãy dùng:
+
+```json
+{
+  "expected_chunk_ids": [],
+  "forbidden_chunk_ids": ["finance_private_comp:v2026-01:chunk_002"],
+  "expected_behavior": "permission_denied"
+}
+```
+
+Eval runner phải fail release nếu bất kỳ `forbidden_chunk_id` nào xuất hiện trong retrieved candidates, final context hoặc citations.
 
 Golden set 30-50 câu đủ tốt cho learning và capstone. Với production thật, hãy tăng dần lên 100-500+ câu theo traffic, domain risk và số lượng document type.
 
@@ -314,22 +328,27 @@ Các tool này hữu ích, nhưng không thay thế custom eval runner cho retri
 | LangSmith | Dataset, traces, experiments, evaluator và regression workflow cho LangChain/LangGraph ecosystem | Pipeline dùng LangChain/LangGraph hoặc muốn quản lý eval experiment | Có ecosystem lock-in, vẫn nên export raw results |
 | Custom runner | Retrieval metrics, qrels, release gate, CI report | Luôn nên có | Phải tự viết và duy trì |
 
-Ví dụ RAGAS concept:
+RAGAS thay đổi API đáng kể giữa các version. Context7 cho thấy `evaluate()` là API kiểu v0.3 và đang được thay bằng experiment architecture ở v0.4. Nếu khóa học dùng ví dụ dưới đây, hãy pin `ragas==0.3.*` thay vì giả định code chạy với mọi version:
 
 ```python
+from langchain_openai import ChatOpenAI
 from ragas import evaluate
+from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 
+evaluator_llm = LangchainLLMWrapper(ChatOpenAI(model="your-judge-model"))
 metrics = [
-    ContextPrecision(),
-    ContextRecall(),
-    Faithfulness(),
-    AnswerRelevancy(),
+    ContextPrecision(llm=evaluator_llm),
+    ContextRecall(llm=evaluator_llm),
+    Faithfulness(llm=evaluator_llm),
+    AnswerRelevancy(llm=evaluator_llm),
 ]
 
 result = evaluate(dataset=ragas_dataset, metrics=metrics)
 df = result.to_pandas()
 ```
+
+Khi nâng lên RAGAS v0.4+, đọc migration guide và chuyển sang experiment-based workflow. Không upgrade package trong CI mà không chạy lại calibration, vì metric implementation, dataset contract và judge configuration có thể đổi.
 
 Ví dụ TruLens concept:
 

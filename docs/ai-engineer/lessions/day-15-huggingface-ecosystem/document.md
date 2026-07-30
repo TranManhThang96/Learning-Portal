@@ -200,8 +200,11 @@ Hugging Face model dùng được trong production khi có đủ:
 - Data policy cho PII.
 - Security review nếu dùng custom remote code.
 
-## 10. Context7 Docs Đã Tham Chiếu Khi Viết Bài
+## 10. Nguồn API Đã Đối Chiếu
 
 - `/websites/huggingface_co_transformers_main`: `AutoTokenizer`, tokenizer parameters, `AutoModelForSequenceClassification`, `pipeline`, `Trainer`.
 - `/llmstxt/huggingface_co_datasets_main_en_llms_txt`: `load_dataset`, `map(batched=True)`, cache behavior.
 - `/huggingface/accelerate`: `Accelerator`, `prepare`, `accelerator.backward`, mixed precision và distributed pattern.
+- [Transformers docs](https://huggingface.co/docs/transformers/main/en/index).
+- [Datasets docs](https://huggingface.co/docs/datasets/main/en/index).
+- [Accelerate docs](https://huggingface.co/docs/accelerate/main/en/index).

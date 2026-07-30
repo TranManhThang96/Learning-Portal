@@ -264,3 +264,11 @@ Cost cần tính riêng:
 - [ ] Có phân tích fail cases, không chỉ bảng aggregate.
 - [ ] Có production decision và điều kiện deploy.
 - [ ] Có versioning và reindex plan.
+
+## 11. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+- [Sentence Transformers: retrieval methods](https://github.com/huggingface/sentence-transformers/blob/main/docs/sentence_transformer/usage/usage.rst): retrieval workflow và cách encode corpus/query.
+- [Sentence Transformers migration guide](https://github.com/huggingface/sentence-transformers/blob/main/docs/migration_guide.md): `encode_query`, `encode_document`, `get_embedding_dimension` và thay đổi tên tham số `inputs`.
+- [SentenceTransformer API](https://www.sbert.net/docs/package_reference/sentence_transformer/SentenceTransformer.html): `batch_size`, `normalize_embeddings`, prompt và device.
+
+Model card của từng checkpoint vẫn là nguồn bắt buộc để xác nhận prefix, metric, dimension, license và giới hạn input. API đúng không có nghĩa preprocessing đúng cho mọi model.

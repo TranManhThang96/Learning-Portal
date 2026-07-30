@@ -5,7 +5,7 @@ layout: home
 hero:
   name: "Learning Portal"
   text: "Lộ trình học lập trình, backend và AI theo nhịp thực chiến"
-  tagline: "Từ Python core, Redis production, DevOps/SRE, Kubernetes, AI Engineer, IaC/Terraform/GitOps, Nginx/Kong Gateway và production system: mỗi bài học đi kèm giải thích, bài tập và tài nguyên để biến kiến thức thành năng lực triển khai."
+  tagline: "Từ Python core đến DevOps/SRE, Kubernetes, AI Engineer, IaC/Terraform/GitOps, Nginx/Kong Gateway và production system — 10 khóa học thực chiến giúp bạn biến kiến thức thành năng lực triển khai."
   image:
     src: /learning-portal-mark.svg
     alt: Learning Portal
@@ -16,9 +16,6 @@ hero:
     - theme: alt
       text: Học Python
       link: /python/
-    - theme: alt
-      text: AI Engineer
-      link: /ai-engineer/
     - theme: alt
       text: Học Claude Code
       link: /claude-lession/
@@ -37,6 +34,12 @@ hero:
     - theme: alt
       text: Học Redis Production
       link: /redis/
+    - theme: alt
+      text: Học AI Engineer (50 ngày)
+      link: /ai-engineer/
+    - theme: alt
+      text: Học Kubernetes (7 ngày — thực chiến)
+      link: /learn-fast/kubernetes/
     - theme: alt
       text: Học DevOps/SRE
       link: /devops/

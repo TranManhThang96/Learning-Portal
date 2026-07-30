@@ -1,23 +1,3 @@
-# Tài liệu thực hành: Chunking Strategies
-
-File này là reference cho corpus mẫu, ground truth và expected observations của Day 34. Fixture canonical để script đọc trực tiếp nằm tại [acme-refund-policy-v4.md](./acme-refund-policy-v4.md); không parse code block trong file reference để lấy input.
-
-## Document metadata
-
-```yaml
-document_id: acme-refund-policy-v4
-title: Chính sách hoàn tiền và giới hạn sử dụng ACME Cloud
-source_uri: kb://policies/acme-refund-policy-v4.md
-source_type: markdown
-document_version: v4
-effective_date: 2026-05-01
-owner_team: customer-success
-tenant_id: acme-public-demo
-```
-
-## Document source
-
-````markdown
 # Chính sách hoàn tiền và giới hạn sử dụng ACME Cloud
 
 Tài liệu này mô tả điều kiện hoàn tiền, giới hạn request và quy trình xử lý exception cho khách hàng dùng ACME Cloud. Tài liệu áp dụng cho các gói Starter, Pro và Enterprise từ ngày 2026-05-01.
@@ -111,25 +91,3 @@ def call_with_backoff(client, request, max_retries=5):
 ```
 
 Code trên chỉ minh họa client behavior. Production client nên có timeout, circuit breaker, request id, structured log và metric cho số lần retry.
-````
-
-## Ground-truth queries
-
-Dùng các query này để so sánh retrieval result giữa các chiến lược.
-
-| ID | Query | Expected evidence | Expected citation |
-|---|---|---|---|
-| Q1 | Gói Pro được gọi bao nhiêu request mỗi phút? | `Pro`, `600`, bảng giới hạn request | Section `3. Bảng giới hạn request` |
-| Q2 | Khách hàng sau 30 ngày có được hoàn tiền không? | `Sau 30 ngày`, `không hoàn tiền`, exception lỗi hệ thống | Section `2. Cửa sổ hoàn tiền` |
-| Q3 | Khi nào support phải chuyển manual review? | `thiếu incident id`, `manual review` | Section `5. Exception do lỗi hệ thống` |
-| Q4 | Điều kiện usage để được hoàn tiền tự động là gì? | `không quá 20% quota tháng đầu tiên` | Section `2. Cửa sổ hoàn tiền` |
-| Q5 | Client nên xử lý HTTP 429 như thế nào? | `Retry-After`, `exponential backoff`, `jitter` | Section `3` hoặc `8` |
-| Q6 | Khách hàng mua qua reseller có được áp dụng chính sách này không? | `không áp dụng`, `reseller` | Section `1. Phạm vi áp dụng` |
-
-## Expected observations
-
-- Fixed-size có thể lấy đúng Q1 nếu table không bị cắt, nhưng dễ tách header khỏi row.
-- Recursive thường tốt ở Q2, Q3, Q4 vì paragraph giữ đủ ý.
-- Markdown-aware thường tốt hơn ở citation vì giữ heading path.
-- Nếu overlap quá cao, Q5 có thể trả cả section rate limit và code retry, cần reranker hoặc context dedupe.
-- Nếu chunk quá lớn, Q1 có thể bị noise vì section bảng và đoạn HTTP 429/code retry trộn với nhau.

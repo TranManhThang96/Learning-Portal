@@ -44,6 +44,8 @@ Kiểm tra OpenAI-compatible endpoint:
 curl http://localhost:8000/v1/models
 ```
 
+Nếu `/v1/models` chạy nhưng `/v1/chat/completions` lỗi về chat template, chọn instruct/chat model có template phù hợp hoặc cấu hình `--chat-template` theo docs vLLM; không tự ghép prompt role trong business code.
+
 ## Phần 2: Gọi Bằng OpenAI-compatible Client
 
 Cài dependency:
@@ -51,6 +53,8 @@ Cài dependency:
 ```bash
 pip install -U openai
 ```
+
+Lệnh `-U` chỉ phù hợp lab tạm. Khi lưu bài hoặc đưa vào CI, ghi version đã chạy (`python -m pip freeze`) và pin dependency trong lockfile/requirements để benchmark có thể lặp lại.
 
 Tạo file `local_llm_probe.py` trong workspace tạm hoặc thư mục thực hành của bạn:
 
@@ -160,6 +164,7 @@ Gợi ý:
 - [ ] Đã có retry có kiểm soát.
 - [ ] Đã không log full prompt nhạy cảm.
 - [ ] Đã có health/readiness check.
+- [ ] Đã smoke test capability app thật sự dùng: model alias, system role, streaming/usage/JSON/tool calling nếu có.
 - [ ] Đã có fallback plan.
 - [ ] Đã có golden eval hoặc ít nhất sample set cho chất lượng.
 - [ ] Đã trả lời được: production được không, điều kiện gì.

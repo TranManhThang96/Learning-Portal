@@ -104,6 +104,14 @@ Yêu cầu:
 
 Gợi ý quan trọng: boolean mask của PyTorch SDPA dùng `True` để cho phép phần tử tham gia attention, còn manual code trong bài dùng `masked_fill(~allowed, very_negative_value)`.
 
+`scaled_dot_product_attention` luôn áp dụng dropout theo giá trị `dropout_p` truyền vào, kể cả module đang ở `eval()`. Vì vậy hãy truyền:
+
+```python
+dropout_p = self.dropout_p if self.training else 0.0
+```
+
+Không được truyền cố định `dropout_p=0.1`, nếu không inference vẫn ngẫu nhiên.
+
 ## Quiz
 
 1. Query, Key và Value khác nhau ở đâu?

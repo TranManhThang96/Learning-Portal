@@ -218,8 +218,10 @@ Production note:
 | Recall | Trong actual positive, bắt được bao nhiêu | False negative đắt |
 | F1 | Trung hòa precision và recall | Cần cân bằng hai phía |
 | ROC-AUC | Khả năng rank positive cao hơn negative | Binary classification tổng quát |
-| PR-AUC | Precision/recall trên nhiều threshold | Class imbalance |
+| Average Precision (AP) | Weighted summary của precision theo mức tăng recall | Class imbalance |
 | Log loss | Phạt probability sai/confident | Cần probability quality |
+
+Lưu ý thuật ngữ: scikit-learn `average_precision_score` không dùng phép tích phân hình thang và không hoàn toàn đồng nghĩa với trapezoidal PR-AUC. Ghi rõ implementation/metric khi so sánh report.
 
 ### Regression
 
@@ -257,3 +259,8 @@ Production note:
 ## 9. Kết Luận
 
 Trong giai đoạn đầu của một AI Engineer, kỹ năng quan trọng không phải nhớ mọi thuật toán. Kỹ năng quan trọng là chọn được model đủ đơn giản, đánh giá đúng, tránh leakage và biết khi nào complexity tạo giá trị thật. Model tốt nhất trong production thường là model đơn giản nhất đạt yêu cầu business với chi phí vận hành chấp nhận được.
+
+## 10. Nguồn tra cứu hiện hành
+
+- scikit-learn stable docs qua Context7: `/websites/scikit-learn_stable`.
+- API/khái niệm đã kiểm tra: estimator/pipeline, split/cross-validation, model families và `average_precision_score`.

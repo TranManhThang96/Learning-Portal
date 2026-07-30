@@ -126,16 +126,11 @@ Vì sao:
 - Manual review cần cho vùng không chắc chắn.
 - Không nên để LLM quyết định fraud trực tiếp vì latency/cost/explainability kém và không phù hợp với tabular real-time scoring.
 
-### Production answer mẫu
+### Việc phải nộp
 
-Dùng được trong production nếu:
-
-- Có historical transaction + chargeback label đáng tin cậy.
-- Có time-based split để tránh data leakage.
-- Có threshold khác nhau cho `review` và `reject`.
-- Có audit log cho từng decision.
-- Có monitoring FP/FN theo segment, merchant, country, payment method.
-- Có fallback rule-based khi model service timeout.
+- Chọn ít nhất một hard rule, một ML signal và vùng manual review.
+- Định nghĩa cost của false positive/false negative.
+- Đề xuất split, audit log, fallback và 5 metrics cần monitor.
 
 ## Bài 2: Customer churn prediction
 
@@ -164,15 +159,11 @@ LLM có thể hỗ trợ phụ trợ:
 - Tóm tắt lý do churn từ ticket/customer notes.
 - Draft email retention cá nhân hóa.
 
-### Production answer mẫu
+### Việc phải nộp
 
-Dùng được trong production nếu:
-
-- Label churn được định nghĩa rõ: cancel, downgrade, không renew, hay inactive.
-- Feature được tính tại thời điểm trước churn, không leak tương lai.
-- Có calibration để score phản ánh xác suất tương đối đáng tin.
-- Có A/B test hoặc holdout để đo uplift từ retention action.
-- Có guardrail để không spam customer bằng offer không phù hợp.
+- Định nghĩa chính xác `churn` và thời điểm prediction.
+- Chọn 8-12 feature chỉ dùng dữ liệu có trước prediction time.
+- Đề xuất cách đo model quality và uplift của retention action.
 
 ## Bài 3: Chatbot CSKH
 
@@ -199,16 +190,11 @@ Không nên fine-tune để nhồi policy vì:
 - Fine-tuning không đảm bảo model nhớ đúng từng chi tiết.
 - Khó citation.
 
-### Production answer mẫu
+### Việc phải nộp
 
-Dùng được trong production nếu:
-
-- Corpus policy được quản lý version và có owner.
-- Retrieval có permission filtering.
-- Bot phải cite source hoặc nói không biết.
-- Có escalation sang human support.
-- Có prompt injection test.
-- Có monitoring hallucination, unresolved rate, CSAT, deflection rate.
+- Vẽ flow retrieval, permission, generation, citation và escalation.
+- Viết abstain policy cho câu hỏi thiếu nguồn hoặc confidence thấp.
+- Đề xuất safety test và quality/business metrics.
 
 ## Bài 4: Search tài liệu nội bộ
 
@@ -238,15 +224,11 @@ Trade-off:
 - Reranking cải thiện relevance nhưng tăng latency/cost.
 - Permission filtering là bắt buộc, không phải optional.
 
-### Production answer mẫu
+### Việc phải nộp
 
-Dùng được trong production nếu:
-
-- Có indexing pipeline ổn định.
-- Có ACL/permission filter trước khi trả kết quả hoặc đưa vào prompt.
-- Có freshness strategy cho tài liệu mới/cũ.
-- Có relevance evaluation dataset.
-- Có fallback keyword search nếu vector index lỗi.
+- Chọn keyword, vector hay hybrid search và giải thích.
+- Chỉ rõ vị trí ACL filter, freshness strategy và fallback.
+- Thiết kế tối thiểu 20 query relevance test.
 
 ## Bài 5: Recommendation sản phẩm
 
@@ -275,15 +257,11 @@ Approach có thể gồm:
 
 LLM có thể hỗ trợ tạo explanation hoặc enrich metadata, nhưng không nên là ranking engine chính trong hot path nếu traffic lớn.
 
-### Production answer mẫu
+### Việc phải nộp
 
-Dùng được trong production nếu:
-
-- Có event tracking đáng tin: impression, click, add-to-cart, purchase.
-- Có chống feedback loop và filter bubble.
-- Có fallback cho user mới/item mới.
-- Có business rules cho inventory, banned items, margin, compliance.
-- Có A/B test đo CTR, conversion, revenue, long-term retention.
+- Định nghĩa event schema cho impression, click, cart và purchase.
+- Thiết kế cold-start fallback và business-rule stage.
+- Đề xuất A/B metrics ngắn hạn lẫn guardrail dài hạn.
 
 ## Mini design review checklist
 
@@ -314,13 +292,12 @@ Trước khi coi một AI feature là production-ready, hãy kiểm tra:
 
 ## Output kỳ vọng
 
-Sau khi làm xong, bạn nên có một bảng quyết định như sau:
+Sau khi làm xong, tự điền bảng quyết định sau:
 
 | Problem | Best approach | Vì sao | Production blocker lớn nhất | Fallback |
 |---|---|---|---|---|
-| Fraud detection | Hybrid rule + ML + review | Low fraud rate, high risk, cần explain | Label leakage/FP cost | Rule + manual review |
-| Customer churn | Classical ML | Tabular prediction, đo ROI được | Label definition/drift | Heuristic retention |
-| Chatbot CSKH | RAG + LLM | Cần answer theo policy cập nhật | Hallucination/injection | Human support |
-| Internal search | Hybrid BM25 + vector | Exact + semantic search | Permission leakage | BM25 |
-| Recommendation | Ranking ML + rules | Personalization + business constraints | Feedback loop/cold start | Popular/category |
-
+| Fraud detection | | | | |
+| Customer churn | | | | |
+| Chatbot CSKH | | | | |
+| Internal search | | | | |
+| Recommendation | | | | |

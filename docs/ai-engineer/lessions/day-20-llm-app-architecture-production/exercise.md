@@ -25,8 +25,10 @@ Không cần API key vì lab dùng mock providers.
 ## Exercise 1: Chạy Service
 
 ```bash
-uvicorn day20_orchestrator:app --reload --port 8000
+ENABLE_DEBUG_ENDPOINTS=1 uvicorn day20_orchestrator:app --reload --port 8000
 ```
+
+Biến này bật endpoint fault injection cho Exercise 5. Không bật debug endpoint khi deploy service ra network thật.
 
 Kiểm tra health:
 
@@ -75,12 +77,14 @@ Kiểm tra response có các field:
 - `estimated_cost_usd`.
 - `prompt_id`.
 - `prompt_version`.
+- `schema_version`.
 
 Câu hỏi:
 
 1. Vì sao response cần `trace_id`?
 2. Vì sao `prompt_version` nên xuất hiện trong response hoặc trace?
-3. Vì sao `max_output_tokens` phải có giới hạn trên?
+3. Vì sao `schema_version` nên lấy từ prompt registry thay vì để client tự đặt tùy ý?
+4. Vì sao `max_output_tokens` phải có giới hạn trên?
 
 ## Exercise 3: Kiểm Tra Cache Hit
 
@@ -154,6 +158,7 @@ Kết quả mong đợi:
 - `fallback_used=true`.
 - `retry_count` lớn hơn `0`.
 - `provider` không phải `mock-fast`.
+- Gọi lại cùng request vẫn chạy routing thay vì cache hit, vì skeleton không cache fallback response dưới key của primary.
 
 Tắt lỗi:
 
@@ -168,6 +173,7 @@ Câu hỏi:
 1. Fallback có thể làm response khác primary như thế nào?
 2. Vì sao fallback cần golden set regression test?
 3. Khi nào fallback nên trả degrade response thay vì gọi model khác?
+4. Vì sao cache fallback response dưới key của primary có thể che mất việc primary đã phục hồi?
 
 ## Exercise 6: Kiểm Tra Quota
 
@@ -204,10 +210,12 @@ curl -s http://127.0.0.1:8000/audit
 Kiểm tra mỗi event có:
 
 - `trace_id`.
+- `timestamp`.
 - `tenant_id`.
 - `user_id_hash`.
 - `task`.
 - `prompt_id`.
+- `schema_version`.
 - `model`.
 - `latency_ms`.
 - `cache_hit`.

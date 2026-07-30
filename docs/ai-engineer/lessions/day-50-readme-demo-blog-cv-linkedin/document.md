@@ -111,3 +111,33 @@ Weak:
 | Observability | Trace ID, latency, cost, feedback |
 | README | Reviewer can run and understand project |
 | Honesty | Limitations are real and specific |
+
+## 8. Claim-To-Evidence Matrix
+
+| Portfolio claim | Link/evidence |
+|---|---|
+| Hybrid retrieval | Retrieval config + eval by retriever version |
+| Permission-aware | ACL test cases + zero leak result |
+| Citation validation | Deterministic validity tests |
+| Citation correctness | Human/judge rubric result with denominator |
+| Prompt injection defense | Red-team cases + block result |
+| Observable | Trace sample + monitoring summary |
+| Reproducible | Lockfile, `.env.example`, clean-clone run |
+
+## 9. Nguồn Kỹ Thuật Đã Xác Minh
+
+Truy cập ngày `2026-06-08`:
+
+- [GitHub: About READMEs](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes):
+  README là entry point để giải thích project và cách bắt đầu.
+- [GitHub: About secret scanning](https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning):
+  scan secret trong repository/history và push protection khi khả dụng.
+- [GitHub Actions secure use reference](https://docs.github.com/en/actions/reference/security/secure-use):
+  least privilege, secret handling và immutable action references.
+- [GitHub: Licensing a repository](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/licensing-a-repository):
+  public repository không tự động đồng nghĩa người khác có quyền reuse code.
+- [OpenSSF Scorecard](https://securityscorecards.dev/):
+  optional automated checks cho public repository supply-chain posture.
+
+Context7 đã được dùng để xác minh GitHub Actions và security guidance. Portfolio
+copywriting không thay thế bằng chứng chạy được từ source, tests và eval artifacts.

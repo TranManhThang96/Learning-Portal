@@ -201,7 +201,9 @@ Query response:
     "input_tokens": 1180,
     "output_tokens": 96,
     "estimated_cost_usd": 0.0021
-  }
+  },
+  "policy_action": "allow",
+  "needs_escalation": false
 }
 ```
 
@@ -209,15 +211,26 @@ Query response:
 
 Ví dụ ngắn dùng `FastAPI` request/response models và `Pydantic` validation:
 
+Lưu ý dependency: endpoint nhận file upload cần package `python-multipart`
+trong môi trường chạy FastAPI, nếu không request `multipart/form-data` sẽ lỗi
+trước khi vào handler.
+
 ```python
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Literal
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 app = FastAPI(title="Vietnamese Enterprise Knowledge Assistant")
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_CONTENT_TYPES = {"application/pdf", "text/plain", "text/markdown"}
+ALLOWED_SUFFIXES = {".pdf", ".txt", ".md"}
 
 
 class QueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     question: str = Field(min_length=3, max_length=2000)
     tenant_id: str = Field(min_length=1, max_length=64)
     user_id: str = Field(min_length=1, max_length=128)
@@ -226,20 +239,69 @@ class QueryRequest(BaseModel):
 
 
 class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_id: str
     doc_id: str
     title: str | None = None
     chunk_id: str
-    page: int | None = None
+    page: int | None = Field(default=None, ge=1)
     section: str | None = None
+    document_version: str | None = None
+    score: float | None = None
+
+
+class LatencyBreakdown(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retrieve: int = Field(ge=0)
+    rerank: int = Field(ge=0)
+    generate: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+
+class Usage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    estimated_cost_usd: float = Field(ge=0)
 
 
 class QueryResponse(BaseModel):
-    answer: str
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(min_length=1, max_length=4000)
     citations: list[Citation]
     trace_id: str
-    latency_ms: dict[str, int]
-    usage: dict[str, int | float]
+    latency_ms: LatencyBreakdown
+    usage: Usage
+    policy_action: Literal["allow", "refuse", "escalate"]
+    needs_escalation: bool = False
+
+    @model_validator(mode="after")
+    def enforce_policy_contract(self) -> "QueryResponse":
+        if self.policy_action == "allow" and not self.citations:
+            raise ValueError("Allowed answer must include citations")
+        if self.policy_action == "refuse" and self.citations:
+            raise ValueError("Refusal must not include citations")
+        if self.policy_action == "escalate" and not self.needs_escalation:
+            raise ValueError("Escalation must set needs_escalation=true")
+        return self
+
+
+class IngestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    doc_id: str = Field(min_length=1, max_length=128)
+    tenant_id: str = Field(min_length=1, max_length=64)
+
+
+class IngestResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    status: Literal["accepted"]
 
 
 @app.get("/health")
@@ -248,16 +310,46 @@ def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-def ready() -> dict[str, str]:
-    # Check vector DB, embedding provider, index metadata and config.
-    return {"status": "ready"}
+def ready() -> dict[str, object]:
+    checks = {"config": True, "vector_db": False, "index": False}
+    if not all(checks.values()):
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "not_ready", "checks": checks},
+        )
+    return {"status": "ready", "checks": checks}
+
+
+async def validate_upload(file: UploadFile) -> int:
+    suffix = Path(file.filename or "").suffix.lower()
+    if file.content_type not in ALLOWED_CONTENT_TYPES or suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(status_code=415, detail="Unsupported file type")
+
+    size = 0
+    while chunk := await file.read(1024 * 1024):
+        size += len(chunk)
+        if size > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File too large")
+    await file.seek(0)
+    return size
 
 
 @app.post("/documents/upload")
-async def upload_document(file: Annotated[UploadFile, File()]) -> dict[str, str]:
-    if file.content_type not in {"application/pdf", "text/plain", "text/markdown"}:
-        raise HTTPException(status_code=415, detail="Unsupported file type")
-    return {"filename": file.filename or "unknown", "status": "accepted"}
+async def upload_document(
+    file: Annotated[UploadFile, File()],
+) -> dict[str, str | int]:
+    size = await validate_upload(file)
+    return {
+        "filename": Path(file.filename or "unknown").name,
+        "size_bytes": size,
+        "status": "accepted",
+    }
+
+
+@app.post("/documents/ingest", response_model=IngestResponse, status_code=202)
+def ingest_document(request: IngestRequest) -> IngestResponse:
+    # Enqueue an idempotent ingestion job keyed by tenant_id + doc_id + content hash.
+    return IngestResponse(job_id=f"ingest_{request.doc_id}", status="accepted")
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -269,6 +361,8 @@ def query(request: QueryRequest) -> QueryResponse:
         trace_id="trace_demo",
         latency_ms={"retrieve": 0, "rerank": 0, "generate": 0, "total": 0},
         usage={"input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0.0},
+        policy_action="refuse",
+        needs_escalation=False,
     )
 ```
 
@@ -281,6 +375,16 @@ def query(request: QueryRequest) -> QueryResponse:
 - Rate limiting.
 - Auth thật.
 - Error format nhất quán.
+
+`content_type` và file extension đều do client kiểm soát, nên check trên chỉ là lớp
+đầu. Production phải inspect magic bytes, parse trong boundary có resource limit,
+scan malware nếu threat model yêu cầu, và không dùng filename người dùng làm storage
+path. Endpoint `/ready` cố ý trả `503` cho đến khi bạn nối dependency checks thật;
+`/health` không được dùng thay cho readiness.
+
+`roles`, `tenant_id` và `user_id` trong request chỉ phù hợp demo. Production phải lấy
+identity/claims từ authentication middleware hoặc gateway đã verify, rồi bỏ qua các
+field quyền do client tự khai.
 
 ## 6. Configuration Boundary
 
@@ -371,6 +475,8 @@ Production concern:
 - Store error reason để debug.
 - Không index document vượt size/type policy.
 - Metadata ACL phải đi cùng chunk.
+- Idempotency key nên dựa trên `tenant_id + doc_id + content_hash`; retry không tạo
+  job/chunk trùng.
 
 ## 8. Query Pipeline
 
@@ -451,6 +557,9 @@ Nếu latency quá cao:
 - [ ] Có architecture diagram hoặc text diagram.
 - [ ] Có API docs/contract.
 - [ ] Có endpoint health/ready/query/document.
+- [ ] `/ready` trả `503` khi dependency bắt buộc chưa sẵn sàng.
+- [ ] Upload có size/type boundary và không tin filename làm path.
+- [ ] Identity/roles production không lấy trực tiếp từ JSON body.
 - [ ] Có citation response contract.
 - [ ] Có config file hoặc `.env.example`.
 - [ ] Có ingestion pipeline design.
@@ -476,3 +585,15 @@ Có thể dùng làm nền production, nhưng bản capstone chưa nên được
 - Có rollback cho prompt/model/index.
 
 Với portfolio, mục tiêu hợp lý là "production-style": architecture và code thể hiện đúng boundary, có demo local, có metrics/eval/guardrails, và limitations được nói thẳng.
+
+## Quiz Tự Kiểm Tra
+
+1. Vì sao `/health=200` không chứng minh service nhận query được?
+2. Vì sao MIME type và extension vẫn chưa đủ để tin file upload?
+3. Tại sao `roles=["admin"]` trong request body không phải authorization?
+4. Ingestion retry cần idempotency key nào?
+5. Field nào giúp Day 47 biết request đã refuse mà không đọc wording answer?
+
+Đáp án: (1) dependency có thể chưa ready; (2) client tự khai được; (3) quyền chưa
+được verify; (4) tenant, document identity và content hash; (5) `policy_action` cùng
+guardrail trace.

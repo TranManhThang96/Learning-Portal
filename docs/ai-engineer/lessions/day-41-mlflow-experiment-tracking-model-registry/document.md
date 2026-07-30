@@ -12,9 +12,10 @@ Một run đủ tốt cho production review nên có schema tối thiểu:
 | `git_commit` | `a1b2c3d4...` | Có |
 | `dataset_version` | `sentiment-v1` | Có |
 | `dataset_hash` | `sha256:...` | Có |
-| `split_strategy` | `stratified_80_20_seed_42` | Có |
-| `primary_metric` | `macro_f1` | Có |
-| `release_gate` | `passed` hoặc `failed` | Có |
+| `split_strategy` | `stratified_train_validation_80_20_seed_42` | Có |
+| `primary_metric` | `val_macro_f1` | Có |
+| `validation_gate` | `passed` hoặc `failed` | Có |
+| `holdout_test_status` | `not_run`, `passed`, `failed` | Có trước promote |
 | `owner` | `ai-team` | Có |
 | `approval_status` | `pending`, `approved`, `rejected` | Có với registry |
 
@@ -42,7 +43,8 @@ Artifact nên có cấu trúc đọc được bằng người và máy:
 
 ```text
 artifacts/day41/
-  classification_report.json
+  validation_classification_report.json
+  holdout_test_report.json
   confusion_matrix.png
   eval_summary.json
   model_card.md
@@ -60,15 +62,15 @@ artifacts/day41/
   "dataset_version": "sentiment-v1",
   "dataset_hash": "sha256:...",
   "git_commit": "a1b2c3d4",
-  "primary_metric": "macro_f1",
+  "primary_metric": "val_macro_f1",
   "metrics": {
-    "macro_f1": 0.84,
-    "accuracy": 0.86,
-    "p95_latency_ms": 18.5
+    "val_macro_f1": 0.84,
+    "val_accuracy": 0.86,
+    "val_p95_latency_ms": 18.5
   },
-  "release_gate": {
-    "macro_f1_min": 0.80,
-    "p95_latency_ms_max": 30,
+  "validation_gate": {
+    "val_macro_f1_min": 0.80,
+    "val_p95_latency_ms_max": 30,
     "status": "passed"
   }
 }
@@ -154,9 +156,11 @@ Workflow đề xuất:
 run training
   -> log params/metrics/artifacts/model
   -> register model version
-  -> set version tag validation_status=candidate
-  -> offline validation
+  -> compare runs on the same validation split
+  -> set version tag validation_gate=passed
   -> set alias candidate
+  -> evaluate candidate once on immutable holdout test
+  -> set holdout_test_status=passed
   -> reviewer approves
   -> set alias champion
   -> deploy serving reads @champion
@@ -169,15 +173,16 @@ Không dùng alias như decoration. Alias phải là contract mà serving thật
 ## 6. Runbook: chọn best run
 
 1. Mở MLflow UI và lọc đúng experiment.
-2. Sắp xếp theo primary metric, ví dụ `macro_f1`.
+2. Sắp xếp theo primary validation metric, ví dụ `val_macro_f1`.
 3. Loại các run không cùng dataset version hoặc không cùng eval set.
 4. Kiểm tra metric phụ: per-class recall, latency, memory, cost.
-5. Mở artifacts: `classification_report.json`, confusion matrix, model card.
+5. Mở artifacts: `validation_classification_report.json`, confusion matrix, model card.
 6. Xác nhận run có `git_commit`, `dataset_hash`, `split_strategy`.
 7. So sánh với champion hiện tại, không chỉ so với các run mới.
 8. Nếu tốt hơn và qua gate, register hoặc giữ model version đã auto-register.
-9. Gắn tag `release_gate=passed`.
+9. Gắn tag `validation_gate=passed`.
 10. Gắn alias `candidate`.
+11. Chạy holdout test đúng một lần cho candidate; nếu đạt, gắn `holdout_test_status=passed`.
 
 Decision rule ví dụ:
 
@@ -193,7 +198,9 @@ Chỉ chọn run mới nếu:
 
 Trước khi promote:
 
-- [ ] Candidate qua release gate.
+- [ ] Candidate qua validation gate.
+- [ ] Candidate được chọn bằng validation set, không phải holdout test.
+- [ ] Holdout test chạy đúng một lần và có `holdout_test_status=passed`.
 - [ ] Model card đã cập nhật.
 - [ ] Artifact không chứa raw PII hoặc secret.
 - [ ] Dataset và code version đầy đủ.
@@ -209,6 +216,11 @@ from mlflow import MlflowClient
 client = MlflowClient()
 model_name = "sentiment-classifier"
 candidate = client.get_model_version_by_alias(model_name, "candidate")
+
+if candidate.tags.get("validation_gate") != "passed":
+    raise RuntimeError("Candidate chưa qua validation gate")
+if candidate.tags.get("holdout_test_status") != "passed":
+    raise RuntimeError("Candidate chưa qua holdout test")
 
 client.set_model_version_tag(
     name=model_name,
@@ -282,6 +294,7 @@ client.set_model_version_tag(
 - [ ] Có `git_commit`.
 - [ ] Có `dataset_version` và `dataset_hash`.
 - [ ] Có train/validation/test split strategy.
+- [ ] Hyperparameter chỉ được chọn bằng validation; holdout test không bị dùng lặp lại.
 - [ ] Có seed và note về nondeterminism nếu dùng GPU.
 - [ ] Có package versions hoặc lock file.
 - [ ] Có base model id và revision nếu dùng pretrained model.

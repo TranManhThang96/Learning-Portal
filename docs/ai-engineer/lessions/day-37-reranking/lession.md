@@ -141,7 +141,7 @@ import os
 
 import cohere
 
-co = cohere.Client(token=os.environ["COHERE_API_KEY"])
+co = cohere.Client(token=os.environ["CO_API_KEY"])
 
 response = co.v2.rerank(
     model="rerank-v4.0-pro",
@@ -166,9 +166,10 @@ Pipeline production hợp lý sau Day 36:
 ```text
 user query
   -> normalize query
-  -> BM25 top 50 + vector top 50
+  -> build mandatory tenant/ACL/deleted/index filters
+  -> BM25 top 50 + vector top 50, mỗi path đều áp dụng filters
   -> merge bằng RRF
-  -> filter tenant/ACL/deleted/index_version
+  -> defense-in-depth permission assertion
   -> dedupe theo document_id/chunk_id/text_hash
   -> truncate text theo max tokens per doc
   -> rerank top 50 hoặc top 100
@@ -348,7 +349,7 @@ class CohereReranker:
         import cohere
 
         self.model_version = model
-        self.client = cohere.Client(token=api_key or os.environ["COHERE_API_KEY"])
+        self.client = cohere.Client(token=api_key or os.environ["CO_API_KEY"])
         self.max_tokens_per_doc = max_tokens_per_doc
 
     def score(self, query: str, candidates: Sequence[CandidateChunk]) -> list[float]:
@@ -367,7 +368,10 @@ class CohereReranker:
         return scores
 
 
-HybridRetrieveFn = Callable[[str, int], list[CandidateChunk]]
+HybridRetrieveFn = Callable[
+    [str, AccessContext, int],
+    list[CandidateChunk],
+]
 
 
 def has_access(candidate: CandidateChunk, access: AccessContext) -> bool:
@@ -405,11 +409,9 @@ def retrieve_then_rerank(
     retrieve_k: int = 100,
     rerank_k: int = 50,
     final_k: int = 8,
-    rerank_timeout_ms: int = 800,
+    rerank_slo_ms: int = 800,
 ) -> list[RankedChunk]:
-    started = time.perf_counter()
-
-    raw_candidates = hybrid_retrieve(query, retrieve_k)
+    raw_candidates = hybrid_retrieve(query, access, retrieve_k)
     permitted = [item for item in raw_candidates if has_access(item, access)]
     deduped = dedupe_candidates(permitted)
     rerank_input = deduped[:rerank_k]
@@ -417,6 +419,7 @@ def retrieve_then_rerank(
     if not rerank_input:
         return []
 
+    rerank_started = time.perf_counter()
     try:
         scores = reranker.score(query, rerank_input)
     except Exception:
@@ -431,13 +434,13 @@ def retrieve_then_rerank(
         )
         return fallback_rank(rerank_input, final_k)
 
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    if elapsed_ms > rerank_timeout_ms:
+    rerank_elapsed_ms = (time.perf_counter() - rerank_started) * 1000
+    if rerank_elapsed_ms > rerank_slo_ms:
         logger.warning(
             "reranker_slow",
             extra={
-                "elapsed_ms": round(elapsed_ms, 2),
-                "timeout_ms": rerank_timeout_ms,
+                "elapsed_ms": round(rerank_elapsed_ms, 2),
+                "slo_ms": rerank_slo_ms,
                 "reranker": reranker.name,
             },
         )
@@ -457,9 +460,9 @@ def retrieve_then_rerank(
 
 Production note cho code trên:
 
-- `hybrid_retrieve` phải filter `tenant_id`, `deleted_at`, `index_version` càng sớm càng tốt ở database/search engine.
+- `hybrid_retrieve` nhận `AccessContext` và phải filter `tenant_id`, ACL, `deleted_at`, `index_version` trong từng database/search-engine query. `has_access` phía sau chỉ là defense-in-depth, không thay thế pre-filter.
 - Reranker không được nhận candidate chưa qua ACL.
-- Với self-host BGE, nên expose qua service riêng để có request timeout thực sự, batching và autoscale. Skeleton trên chỉ minh họa timeout budget ở application layer.
+- `rerank_slo_ms` trong skeleton chỉ phát hiện request chậm sau khi sync call kết thúc; nó không cancel inference. Với self-host BGE, nên expose qua service riêng hoặc chạy qua worker có `asyncio.wait_for`/client timeout để có timeout thực sự, batching và autoscale.
 - Với managed API, đặt timeout/retry/circuit breaker ở HTTP client hoặc SDK layer.
 - Log cần có `query_id`, `candidate_count`, `reranker_model`, `before_rank`, `after_rank`, latency và fallback flag.
 

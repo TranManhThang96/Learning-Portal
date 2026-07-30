@@ -49,7 +49,7 @@ Baseline tối thiểu nên có:
 - Model version: ví dụ `churn-logreg-calibrated-v1`.
 - Dataset snapshot hoặc training window.
 - Feature contract: danh sách feature, type, missing policy, category policy.
-- Metric tổng: ROC-AUC, PR-AUC, precision, recall, F1.
+- Metric tổng: ROC-AUC, Average Precision, precision, recall, F1.
 - Threshold hiện tại và lý do chọn.
 - Segment metrics quan trọng.
 - Expected cost/profit nếu có business cost.
@@ -59,7 +59,7 @@ Ví dụ metric contract:
 | Metric | Gate ví dụ | Vì sao |
 |---|---:|---|
 | ROC-AUC | không giảm quá 0.01 so với baseline | Kiểm tra ranking quality tổng |
-| PR-AUC | không giảm quá 0.02 | Quan trọng khi positive class hiếm |
+| Average Precision | không giảm quá 0.02 | Quan trọng khi positive class hiếm |
 | Recall tại threshold đã chọn | `>= 0.75` | Không bỏ lỡ quá nhiều khách churn |
 | Precision tại threshold đã chọn | `>= 0.35` | Tránh spam offer quá rộng |
 | Predicted positive rate | `<= 0.45` | Đảm bảo capacity CSKH |
@@ -228,7 +228,7 @@ Kỹ thuật phổ biến:
 - Reliability table/diagram: chia probability thành bin, so sánh predicted probability trung bình với actual positive rate.
 - Brier score: đo lỗi probability, càng thấp càng tốt.
 
-Trade-off: calibration thêm một bước training và có thể overfit nếu calibration set nhỏ. Với scikit-learn, dùng `CalibratedClassifierCV` trong pipeline đánh giá để tránh tự viết logic sai.
+Trade-off: calibration thêm một bước training và có thể overfit nếu calibration set nhỏ. Với scikit-learn, dùng `CalibratedClassifierCV` để calibration bằng cross-validation hoặc một tập calibration tách biệt, tránh vừa fit model vừa calibration trên cùng sample.
 
 ### Step 7: Data leakage
 
@@ -326,7 +326,7 @@ Ví dụ rule:
 ```text
 Model mới chỉ được promote nếu:
 - ROC-AUC >= baseline ROC-AUC - 0.01
-- PR-AUC >= baseline PR-AUC - 0.02
+- Average Precision >= baseline AP - 0.02
 - Recall at selected threshold >= 0.75
 - Predicted positive rate <= 0.45
 - Không segment nào có recall < 0.50 với count >= 200
@@ -372,6 +372,7 @@ Có, cách làm trong bài này dùng được trong production nếu đáp ứn
 - Có schema validation cho inference input.
 - Có quy trình xử lý drift, skew và incident.
 - Có kiểm soát PII trong logging và artifact.
+- Chỉ load artifact `joblib`/pickle từ nguồn tin cậy và giữ môi trường dependency tương thích.
 
 Chưa nên dùng production nếu:
 

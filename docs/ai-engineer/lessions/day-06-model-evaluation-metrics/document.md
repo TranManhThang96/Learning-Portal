@@ -22,7 +22,7 @@ Ký hiệu:
 | FPR | `FP / (FP + TN)` | Negative thật bị báo nhầm bao nhiêu? | FPR nhỏ vẫn có nhiều FP nếu negative rất lớn |
 | Specificity | `TN / (TN + FP)` | Negative thật được giữ đúng bao nhiêu? | Ít trực quan với business hơn FP count |
 | ROC-AUC | Area under ROC curve | Ranking positive cao hơn negative tốt không? | Có thể lạc quan với positive hiếm |
-| PR-AUC / Average Precision | Area/tóm tắt precision-recall curve | Model xử lý positive hiếm tốt không? | Không chọn threshold thay bạn |
+| Average Precision (AP) | Precision trung bình có trọng số theo mức tăng recall | Model xử lý positive hiếm tốt không? | Không giống hoàn toàn trapezoidal PR-AUC; không chọn threshold thay bạn |
 
 ## 2. Regression Metrics Reference
 
@@ -63,10 +63,10 @@ Nếu Recall@k thấp, LLM thiếu context đúng và dễ hallucinate.
 | Context | Metric chính | Metric phụ | Quyết định thường gặp |
 |---|---|---|---|
 | Binary classification cân bằng | Accuracy, F1, ROC-AUC | Confusion matrix | Chọn model có generalization tốt |
-| Fraud/anomaly positive hiếm | PR-AUC, recall, precision, FP/FN count | ROC-AUC, calibration | Chọn threshold theo cost/capacity |
+| Fraud/anomaly positive hiếm | AP, recall, precision, FP/FN count | ROC-AUC, calibration | Chọn threshold theo cost/capacity |
 | Medical/security triage | Recall, FN count | Precision, workload | Giữ recall cao, thêm human review |
 | Auto block/ban user | Precision, FP count | Recall, complaint rate | Threshold cao, audit kỹ |
-| Churn campaign | PR-AUC, recall@budget, calibration | ROI, uplift | Chọn top-N user để target |
+| Churn campaign | AP, recall@budget, calibration | ROI, uplift | Chọn top-N user để target |
 | Regression forecast | MAE/RMSE, p95 error | MAPE nếu an toàn | Chọn model theo cost lỗi lớn |
 | Search/RAG retrieval | Recall@k, MRR/NDCG | Latency, token cost | Chọn k/reranker theo quality-cost |
 
@@ -145,7 +145,7 @@ Dataset:
 
 Score metrics:
 - ROC-AUC:
-- PR-AUC / average precision:
+- Average Precision:
 - Calibration check:
 
 Threshold decision:
@@ -191,7 +191,7 @@ Ví dụ một fraud model có precision tổng 70%, nhưng ở segment `new_use
 
 | Loại metric | Ví dụ | Mục tiêu | Rủi ro |
 |---|---|---|---|
-| Offline ML metric | ROC-AUC, PR-AUC, F1, MAE, NDCG | So sánh model trước deploy | Dataset không đại diện production |
+| Offline ML metric | ROC-AUC, AP, F1, MAE, NDCG | So sánh model trước deploy | Dataset không đại diện production |
 | Online technical metric | Latency, error rate, throughput | Hệ thống chạy ổn định | Model đúng nhưng serve chậm |
 | Online business metric | Fraud loss, conversion, revenue, retention | Tác động thật | Bị ảnh hưởng bởi nhiều yếu tố ngoài model |
 | Ops metric | Alert volume, review SLA, analyst precision | Vận hành được không | Model tạo workload vượt capacity |
@@ -214,7 +214,7 @@ Có segment nào bị ảnh hưởng xấu không?
 - [ ] Có baseline đơn giản để so sánh.
 - [ ] Báo cáo class distribution.
 - [ ] Có confusion matrix tại selected threshold.
-- [ ] Có ROC-AUC và PR-AUC/average precision cho score.
+- [ ] Có ROC-AUC và Average Precision cho score; nếu báo cáo trapezoidal PR-AUC thì ghi rõ cách tính.
 - [ ] Có threshold sweep với FP/FN/TP/TN.
 - [ ] Threshold được chọn theo cost, capacity hoặc guardrail.
 - [ ] Có metrics theo segment quan trọng.
@@ -261,6 +261,8 @@ model = Pipeline(
 
 Điểm quan trọng: mọi transformer có `.fit()` phải nằm trong `Pipeline` và chỉ fit trên training data.
 
+Với scikit-learn stable hiện tại, `TunedThresholdClassifierCV` có thể tune decision threshold bằng cross-validation. Trong khóa học ta vẫn sweep threshold thủ công để thấy rõ FP/FN/capacity. Dù dùng cách nào, không được fit model và tune threshold trên cùng dữ liệu; hãy dùng validation set mới hoặc cross-validation phù hợp.
+
 ## 11. Câu Trả Lời Production Ngắn Gọn
 
 Dùng được trong production không? Có, nếu:
@@ -272,3 +274,14 @@ Dùng được trong production không? Có, nếu:
 - Có kiểm tra segment, drift, latency và feedback bias.
 
 Không đủ production nếu chỉ có một notebook với accuracy/ROC-AUC đẹp nhưng không có threshold, cost model, segment analysis và monitoring plan.
+
+## 12. Nguồn Đã Xác Minh Bằng Context7
+
+Đối chiếu ngày 8/6/2026 với tài liệu scikit-learn stable:
+
+- [Classification metrics](https://scikit-learn.org/stable/modules/model_evaluation.html#classification-metrics)
+- [`precision_recall_curve`](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_recall_curve.html)
+- [`average_precision_score`](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.average_precision_score.html)
+- [Decision threshold tuning](https://scikit-learn.org/stable/modules/classification_threshold.html)
+- [`TunedThresholdClassifierCV`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TunedThresholdClassifierCV.html)
+- [Common pitfalls và data leakage](https://scikit-learn.org/stable/common_pitfalls.html)

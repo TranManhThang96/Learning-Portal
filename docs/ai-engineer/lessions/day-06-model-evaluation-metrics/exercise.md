@@ -207,7 +207,7 @@ def print_score_metrics(y_true: np.ndarray, y_score: np.ndarray) -> None:
     print("\n=== Score metrics ===")
     print(f"Positive rate:      {positive_rate:.4f}")
     print(f"ROC-AUC:            {roc_auc_score(y_true, y_score):.4f}")
-    print(f"PR-AUC / AP:        {average_precision_score(y_true, y_score):.4f}")
+    print(f"Average Precision:  {average_precision_score(y_true, y_score):.4f}")
 
     precision, recall, pr_thresholds = precision_recall_curve(y_true, y_score)
     f1_values = 2 * precision[:-1] * recall[:-1] / np.maximum(precision[:-1] + recall[:-1], 1e-12)
@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
 Bạn sẽ thấy ba nhóm output:
 
-1. `Score metrics`: positive rate, ROC-AUC, PR-AUC/average precision, best F1 threshold.
+1. `Score metrics`: positive rate, ROC-AUC, Average Precision, best F1 threshold.
 2. `Selected thresholds`: precision/recall/F1, confusion matrix count, alert volume và expected value ở một số threshold.
 3. `Best threshold`: threshold tối ưu theo net value, capacity và recall guardrail.
 
@@ -487,7 +487,7 @@ Trả lời:
 3. Threshold production bạn chọn là bao nhiêu và vì sao?
 4. Nếu business tăng analyst capacity từ 300 lên 1,000 alerts/ngày, threshold có nên đổi không?
 5. Nếu fraud pattern drift sau 2 tuần, metric nào sẽ báo hiệu sớm?
-6. Nếu model có PR-AUC tốt hơn nhưng latency p95 tăng 5 lần, có deploy không?
+6. Nếu model có Average Precision tốt hơn nhưng latency p95 tăng 5 lần, có deploy không?
 
 ## 6. Expected Takeaways
 
@@ -495,7 +495,7 @@ Sau bài tập, bạn cần rút ra được:
 
 - Accuracy gần như vô dụng nếu positive class rất hiếm và business quan tâm positive class.
 - ROC-AUC tốt không đảm bảo threshold production tốt.
-- PR-AUC/average precision hữu ích hơn cho imbalanced classification.
+- Average Precision và precision-recall curve hữu ích cho imbalanced classification; không gọi AP và trapezoidal PR-AUC là cùng một metric.
 - Threshold là business decision, không chỉ là model decision.
 - Cost/profit và capacity có thể chọn threshold khác với F1.
 - Segment metrics là bắt buộc trước production.

@@ -218,9 +218,24 @@ Expected final: hướng dẫn escalation hoặc tạo ticket, không hứa refu
 
 ## 11. Tài Liệu Tham Khảo
 
-- LangGraph Python reference: `StateGraph`, `MessagesState`, `ToolNode`, `tools_condition`, checkpointer, `interrupt`, `Command`.
-- ReAct paper: reasoning and acting pattern.
-- OWASP Top 10 for LLM Applications: prompt injection, tool abuse, sensitive data leakage.
+- [LangGraph overview](https://docs.langchain.com/oss/python/langgraph/overview):
+  graph/state runtime, durable execution, persistence và HITL.
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts):
+  `interrupt`, `Command(resume=...)`, `thread_id`, node re-execution và idempotency.
+- [LangGraph time travel](https://docs.langchain.com/oss/python/langgraph/use-time-travel):
+  replay/fork checkpoint và việc interrupt được kích hoạt lại.
+- [LangChain OpenAI integration](https://docs.langchain.com/oss/python/integrations/chat/openai):
+  chat model, tool binding và structured output.
+- [ReAct paper](https://arxiv.org/abs/2210.03629): reasoning-and-acting pattern;
+  production không nên expose chain-of-thought.
+- [OWASP Top 10 for LLM Applications 2025](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/):
+  prompt injection, excessive agency và data leakage.
+- [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
+  goal hijack, tool misuse, identity/privilege abuse, memory poisoning và cascading failure.
 - Day 19 trong khóa học: structured output và function calling.
 - Day 20 trong khóa học: production architecture, observability, quota, audit.
 - Day 23 trong khóa học: security basics cho LLM app.
+
+Các API LangGraph trong bài được đối chiếu ngày 2026-06-08. Khi cài dependency
+thật, pin version/lockfile và chạy graph, interrupt/resume, idempotency tests trước
+khi nâng package.

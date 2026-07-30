@@ -214,6 +214,8 @@ Production note:
 - Dùng `POST` streaming với `fetch()` nếu query nhạy cảm hoặc payload lớn.
 - Disable buffering ở reverse proxy cho SSE, ví dụ `X-Accel-Buffering: no` với NGINX.
 - Kiểm tra idle timeout của load balancer, CDN và ingress.
+- Sau khi stream đã gửi headers, lỗi không thể đổi HTTP status. Server phải gửi event `error`; client phải coi `done` hoặc `error` là terminal event.
+- FastAPI mới có `fastapi.sse.EventSourceResponse`; `StreamingResponse` vẫn phù hợp khi cần tự kiểm soát wire format hoặc hỗ trợ version cũ hơn.
 
 ### `GET /models/current`
 
@@ -248,6 +250,7 @@ Rule:
 - Client chỉ thấy message an toàn.
 - Server log giữ exception type, stack trace và upstream error.
 - Mọi error phải có `trace_id`.
+- Override `RequestValidationError` nếu muốn lỗi `422` tuân theo cùng `ErrorResponse`; nếu không, FastAPI dùng schema validation error mặc định khác contract trên.
 
 ## 5. Config template
 
@@ -295,7 +298,7 @@ Log một request thành công:
   "event": "query_ok",
   "trace_id": "tr_123",
   "tenant_id": "demo",
-  "user_id": "u_456",
+  "user_id_hash": "sha256:...",
   "route": "/query",
   "input_chars": 68,
   "prompt_tokens": 2100,
@@ -377,6 +380,8 @@ Decision:
 - [ ] Auth bắt buộc cho endpoint inference.
 - [ ] Tenant/user context không lấy hoàn toàn từ body nếu client có thể giả mạo.
 - [ ] Rate limit theo tenant/user/API key.
+- [ ] Tenant/user/API-key identity đến từ auth middleware hoặc gateway, không lấy nguyên xi từ request body/header chưa xác thực.
+- [ ] Không tin `X-Forwarded-For` nếu request không đi qua trusted proxy đã sanitize header.
 - [ ] Token budget theo tenant để tránh cost spike.
 - [ ] Không trả stack trace, provider error raw hoặc prompt nội bộ ra client.
 - [ ] Redact prompt/response trong logs.
@@ -473,3 +478,10 @@ Sample local chưa production-ready vì rate limiter là in-memory, fake runtime
 chưa có auth thật, chưa có Redis/API Gateway quota, chưa có dashboard/alert,
 và chưa được load test trên traffic + GPU thật.
 ```
+
+## 13. Nguồn kỹ thuật đã kiểm chứng
+
+- FastAPI lifespan: https://fastapi.tiangolo.com/advanced/events/
+- FastAPI error handlers: https://fastapi.tiangolo.com/tutorial/handling-errors/
+- FastAPI streaming responses: https://fastapi.tiangolo.com/advanced/custom-response/#streamingresponse
+- FastAPI SSE: https://fastapi.tiangolo.com/tutorial/server-sent-events/

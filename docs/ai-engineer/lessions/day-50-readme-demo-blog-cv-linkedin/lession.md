@@ -43,6 +43,29 @@ Với Senior SE chuyển sang AI Engineer, portfolio tốt cần chứng minh 3 
 
 Không nên trình bày project như "chatbot với tài liệu". Nên trình bày như "Vietnamese Enterprise Knowledge Assistant có citation, permission, evaluation và monitoring".
 
+## 1.1. Chuỗi Bằng Chứng Từ Day 46 Đến Day 50
+
+```text
+Day 46 policy + guardrail tests
+  -> Day 47 golden set + CI thresholds
+  -> Day 48 API contract + backend readiness
+  -> Day 49 UI + traces + evaluation report
+  -> Day 50 README/demo/CV claims
+```
+
+Mỗi câu trong portfolio phải trỏ được về evidence:
+
+| Claim | Evidence tối thiểu |
+|---|---|
+| Permission-aware | ACL tests + trace không leak |
+| Grounded/cited | Citation validity + correctness results |
+| Evaluated | Versioned golden set + report + threshold |
+| Observable | Trace schema + sample traces + aggregate metrics |
+| Production-style | Architecture, failure paths, limitations, runbook/readiness |
+
+Nếu chưa có evidence, đổi wording thành “designed” hoặc “prototype”, không viết
+“implemented”, “achieved” hay một con số chưa đo.
+
 ## 2. README Chuyên Nghiệp
 
 README là entry point của repo. Nó phải giúp reviewer trả lời nhanh:
@@ -132,8 +155,8 @@ Frontend
 ```bash
 cp .env.example .env
 docker compose up --build
-python scripts/ingest.py --input data/raw
-python scripts/evaluate.py --golden-set data/eval/golden_set.jsonl
+python3 scripts/ingest.py --input data/raw
+python3 scripts/evaluate.py --golden-set data/eval/golden_set.jsonl
 ```
 
 ## Query Example
@@ -153,11 +176,16 @@ curl -X POST http://localhost:8000/query \
 
 | Metric | Result | Threshold |
 |---|---:|---:|
-| Recall@5 | 0.86 | 0.80 |
-| MRR@10 | 0.74 | 0.70 |
-| Citation correctness | 0.96 | 0.95 |
-| Format pass rate | 1.00 | 0.98 |
-| No-answer accuracy | 0.92 | 0.90 |
+| Recall@5 | `<latest run>` | 0.80 |
+| MRR@10 | `<latest run>` | 0.70 |
+| Citation validity | `<latest run>` | 1.00 |
+| Citation correctness | `<latest run>` | 0.95 |
+| Faithfulness | `<latest run or N/A>` | `<configured gate>` |
+| Format pass rate | `<latest run>` | 0.98 |
+| No-answer accuracy | `<latest run>` | 0.90 |
+
+See [`evaluation_report.md`](docs/evaluation_report.md) for versions, applicable
+case counts, failures and release decision.
 
 ## Security And Guardrails
 
@@ -181,6 +209,10 @@ curl -X POST http://localhost:8000/query \
 - Evaluation set needs more domain-labeled examples.
 - UI is intentionally minimal.
 ````
+
+Không publish số ví dụ như `0.86` nếu chưa chạy eval. README phải lấy số từ report
+mới nhất, ghi ngày/version/denominator và link tới artifact. Metric `N/A` không được
+đổi thành `1.0`.
 
 ## 4. Demo Video Script 3-5 Phút
 
@@ -220,6 +252,8 @@ Demo checklist:
 - Có eval report.
 - Không lộ API key/secret.
 - Không dùng document có data nhạy cảm thật.
+- Demo command đã chạy lại từ clean clone hoặc clean environment.
+- Nếu dùng số metric, chỉ lấy từ evaluation artifact đang mở trong video.
 
 ## 5. Blog Outline
 
@@ -258,6 +292,10 @@ Use English, action-first, evidence-driven:
 - Implemented a golden-set evaluation workflow measuring Recall@K, MRR, citation correctness, no-answer accuracy and format pass rate.
 - Added guardrails for prompt injection defense, structured output validation, no-answer handling and safe logging.
 - Created a portfolio-ready demo with API contract, Docker Compose setup, evaluation report, monitoring summary and documented trade-offs.
+
+Chỉ dùng bullet nào có artifact chứng minh. Nếu chưa deploy production, không viết
+“operated at scale” hoặc “reduced cost by X%”. Nếu số liệu đến từ synthetic corpus,
+ghi rõ context khi phỏng vấn.
 
 Avoid weak bullets:
 
@@ -331,6 +369,21 @@ Best solution:
 - Demo video dùng sample docs.
 - CV bullets tập trung vào decisions và metrics, không phóng đại.
 
+## 8.1. Audit Trước Khi Public
+
+Chạy từ root capstone:
+
+```bash
+git status --short
+git grep -nEi 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|sk-[A-Za-z0-9_-]{16,}|password[[:space:]]*[:=]'
+find . -type f \( -name ".env" -o -name "*.pem" -o -name "*.key" \) -print
+```
+
+Search thủ công có false positive và không quét hết git history. Repo public nên bật
+secret scanning/push protection nếu platform hỗ trợ và chạy một secret scanner trên
+history. Nếu secret từng commit, xóa file hiện tại là chưa đủ: revoke/rotate secret
+trước, sau đó xử lý history theo policy.
+
 ## 9. Dùng Được Trong Production Không?
 
 Capstone này có thể là nền tảng production-style, nhưng để dùng production thật cần thêm điều kiện.
@@ -366,3 +419,18 @@ Trong portfolio, nên nói:
 - [ ] LinkedIn post.
 - [ ] Known limitations rõ ràng.
 - [ ] Repo public không chứa API key, PII hoặc file nội bộ thật.
+- [ ] Mọi claim/metric trong README, demo và CV có evidence link.
+- [ ] Secret từng lộ đã được rotate, không chỉ xóa khỏi working tree.
+
+## Quiz Cuối Khóa
+
+1. “Production-style” khác “production-ready” ở đâu?
+2. Vì sao metric trong README cần denominator và version?
+3. Xóa `.env` khỏi commit mới có vô hiệu secret đã lộ không?
+4. Khi nào nên dùng “designed” thay vì “implemented” trong CV?
+5. Reviewer cần ba demo case nào để thấy happy path và failure controls?
+
+Đáp án: (1) thể hiện boundary/judgment nhưng chưa chứng minh vận hành thật; (2) để
+reproduce và tránh số đẹp thiếu context; (3) không, phải rotate và xử lý history;
+(4) khi chưa có artifact/code chạy chứng minh; (5) normal+citation, no-answer, ACL
+hoặc prompt-injection refusal.

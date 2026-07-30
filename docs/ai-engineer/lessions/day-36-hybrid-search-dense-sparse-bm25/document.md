@@ -1,5 +1,7 @@
 # Document: Hybrid Search Cheat Sheet, Code Reference Và Runbook
 
+> Đây là tài liệu tra cứu đi kèm. `lession.md` chứa bài học hoàn chỉnh; file này tập trung vào code reference, benchmark template, runbook và nguồn kỹ thuật.
+
 ## 1. Cheat sheet nhanh
 
 Hybrid search là chiến lược retrieval kết hợp sparse search và dense search, thường merge bằng RRF rồi đưa candidates sang reranker hoặc context builder.
@@ -369,6 +371,50 @@ class HybridSearchService:
 
 Trong online service thật, BM25 và dense nên chạy song song bằng async IO hoặc thread pool vì hai calls độc lập. Demo trên chạy tuần tự để dễ đọc.
 
+Nếu backend local vẫn cung cấp API sync, có thể dùng `asyncio.to_thread` để minh họa parallel path. Với Elasticsearch/Qdrant/Postgres remote, ưu tiên async client gốc thay vì giữ thread pool lâu dài:
+
+```python
+import asyncio
+
+
+async def timed_search(
+    retriever: Retriever,
+    query: str,
+    auth: AuthContext,
+    limit: int,
+) -> tuple[list[SearchHit], float]:
+    started = time.perf_counter()
+    hits = await asyncio.to_thread(retriever.search, query, auth, limit)
+    return hits, (time.perf_counter() - started) * 1000
+
+
+async def search_parallel(
+    bm25: Retriever,
+    dense: Retriever,
+    config: RetrievalConfig,
+    query: str,
+    auth: AuthContext,
+) -> tuple[list[HybridHit], Mapping[str, float]]:
+    normalized_query = normalize_query(query)
+    (bm25_hits, bm25_ms), (dense_hits, dense_ms) = await asyncio.gather(
+        timed_search(bm25, normalized_query, auth, config.bm25_top_k),
+        timed_search(dense, normalized_query, auth, config.dense_top_k),
+    )
+    fused = rrf_fuse([bm25_hits, dense_hits], config.rrf_k)
+    final_hits = limit_document_diversity(
+        fused,
+        final_top_k=config.final_top_k,
+        max_chunks_per_document=config.max_chunks_per_document,
+    )
+    return final_hits, {
+        "bm25_ms": bm25_ms,
+        "dense_ms": dense_ms,
+        "final_hits": float(len(final_hits)),
+    }
+```
+
+Code production nên dùng retriever async protocol và timeout riêng cho từng backend; `to_thread` chỉ là bridge cho implementation sync trong lab.
+
 ### 4.3 Dataset mẫu
 
 ```python
@@ -622,3 +668,13 @@ Nếu chunk đúng không nằm trong BM25 lẫn dense top 100, lỗi nằm ở 
 3. Vì sao cần benchmark theo category `no_diacritic`?
 4. Khi nào SPLADE đáng để thử?
 5. Vì sao cache key phải chứa `permission_hash`?
+
+## 13. Nguồn kỹ thuật đã xác minh
+
+Các API trong Day 36 được đối chiếu bằng Context7 ngày 2026-06-08:
+
+- [Sentence Transformers repository](https://github.com/huggingface/sentence-transformers): `SentenceTransformer.encode(...)`, `convert_to_numpy` và normalized embeddings.
+- [Sentence Transformers quickstart](https://github.com/huggingface/sentence-transformers/blob/main/docs/quickstart.rst): semantic search và reranking primitives dùng tiếp ở Day 37.
+- [Qdrant Python Client](https://github.com/qdrant/qdrant-client): async `query_points`, payload filters và native dense+sparse fusion bằng `Prefetch` + `FusionQuery(Fusion.RRF)`.
+
+`rank-bm25` trong lab là dependency demo in-memory. Trước production, thay bằng lexical engine có persistent index, analyzer versioning, backup và ACL filter; đồng thời pin mọi dependency trong lockfile.

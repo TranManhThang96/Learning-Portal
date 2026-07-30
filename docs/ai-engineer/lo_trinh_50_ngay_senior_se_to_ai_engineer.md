@@ -6,6 +6,8 @@
 >
 > **Đối tượng**: Senior software engineer đã mạnh về system design, microservices, databases, Docker/K8s, backend/API và muốn chuyển hướng sang AI Engineer / GenAI Engineer / Backend Engineer with AI focus.
 
+> **Bài nên học trước Day 1**: [Day 00 - Tổng quan AI hiện nay và nghề AI Engineer](./lessions/day-00-tong-quan-ai-hien-nay-va-nghe-ai-engineer.md). Bài này giúp người mới hiểu bức tranh AI 2026, cơ hội nghề nghiệp, ứng dụng thực tế, yêu cầu năng lực và cách dùng lộ trình 50 ngày.
+
 ---
 
 ## 📌 Định vị thực tế
@@ -63,6 +65,7 @@ Nguyên tắc mỗi ngày:
 
 | Phase | Ngày | Chủ đề | Deliverable chính |
 |---|---:|---|---|
+| Phase 0 | Day 00 | Tổng quan AI hiện nay và nghề AI Engineer | Career map + skill gap + capstone direction |
 | Phase 1 | Day 1-8 | ML Foundation | Customer Churn ML Pipeline |
 | Phase 2 | Day 9-16 | Deep Learning, NLP, Transformer | Fine-tuned PhoBERT/BERT Classifier |
 | Phase 3 | Day 17-24 | LLM Application Engineering | AI Assistant có tool calling + memory |

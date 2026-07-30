@@ -82,6 +82,34 @@ expected_loss = probability * cost_if_wrong
 
 Rất hữu ích khi quyết định bằng business cost thay vì threshold cố định.
 
+### Partial derivative, gradient và chain rule
+
+```text
+gradient(L) = [
+  partial L / partial w1,
+  partial L / partial w2,
+  ...
+]
+
+composed function:
+y = f(g(x))
+dy/dx = df/dg * dg/dx
+```
+
+Debug nhanh:
+
+- Parameter và gradient phải có shape tương thích.
+- Loss `NaN`: kiểm tra input finite, learning rate, overflow và divide-by-zero.
+- Train loss giảm nhưng validation xấu: kiểm tra overfitting/leakage.
+
+### Bayes
+
+```text
+P(A | B) = P(B | A) * P(A) / P(B)
+```
+
+`P(A)` là prior/base rate. Với event hiếm, false-positive rate nhỏ vẫn có thể tạo rất nhiều false alarms.
+
 ## NumPy reminders
 
 Theo tài liệu NumPy:
@@ -160,3 +188,9 @@ Khi đưa ra decision:
 - Với risk model, probability phải được calibration nếu dùng để tính expected loss.
 - Với decision nhạy cảm, cần human-in-the-loop, audit trail và rollback threshold.
 - Với embedding nội bộ, vẫn áp dụng access control vì vector có thể leak thông tin qua similarity hoặc reconstruction attack.
+
+## Nguồn tra cứu hiện hành
+
+- NumPy 2.4 docs qua Context7: `/websites/numpy_doc_2_4`.
+- Các API đã đối chiếu: `ndarray`, `shape`, `dtype`, broadcasting, `@`, `np.linalg.norm`, `np.isfinite`, `np.argpartition`.
+- `np.argpartition` không bảo đảm phần top-k đã sort; cần sort candidate theo score trước khi trả kết quả.

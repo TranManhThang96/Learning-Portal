@@ -148,10 +148,10 @@ def render_prompt(template: str, case: dict[str, Any]) -> str:
     return prompt
 
 
-def parse_json_object(text: str) -> tuple[dict[str, Any], bool]:
+def parse_json_object(text: str) -> tuple[dict[str, Any], bool, bool]:
     try:
         value = json.loads(text)
-        return (value, True) if isinstance(value, dict) else ({}, False)
+        return (value, True, True) if isinstance(value, dict) else ({}, False, False)
     except json.JSONDecodeError:
         pass
 
@@ -160,16 +160,16 @@ def parse_json_object(text: str) -> tuple[dict[str, Any], bool]:
     if start >= 0 and end > start:
         try:
             value = json.loads(text[start : end + 1])
-            return (value, True) if isinstance(value, dict) else ({}, False)
+            return (value, False, True) if isinstance(value, dict) else ({}, False, False)
         except json.JSONDecodeError:
-            return {}, False
-    return {}, False
+            return {}, False, False
+    return {}, False, False
 
 
 def score_case(case: dict[str, Any], output: str, latency_ms: float) -> dict[str, Any]:
     expected = case.get("expected", {})
     checks = case.get("checks", {})
-    parsed, json_valid = parse_json_object(output)
+    parsed, strict_json_valid, recoverable_json = parse_json_object(output)
 
     required_keys = checks.get("required_keys", [])
     required_ok = all(key in parsed for key in required_keys)
@@ -197,13 +197,14 @@ def score_case(case: dict[str, Any], output: str, latency_ms: float) -> dict[str
     forbidden = checks.get("forbidden", [])
     forbidden_hits = [phrase for phrase in forbidden if phrase.lower() in output_lower]
 
-    format_accuracy = int(json_valid and required_ok and enum_ok)
+    format_accuracy = int(strict_json_valid and required_ok and enum_ok)
     task_accuracy = 0.7 * exact_score + 0.3 * contains_score
 
     return {
         "case_id": case["id"],
         "tags": case.get("tags", []),
-        "json_valid": int(json_valid),
+        "strict_json_valid": int(strict_json_valid),
+        "recoverable_json": int(recoverable_json),
         "required_ok": int(required_ok),
         "enum_ok": int(enum_ok),
         "format_accuracy": format_accuracy,
@@ -245,7 +246,8 @@ def run_model_eval(
 
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     metric_names = [
-        "json_valid",
+        "strict_json_valid",
+        "recoverable_json",
         "required_ok",
         "enum_ok",
         "format_accuracy",
@@ -253,15 +255,27 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "contains_score",
         "task_accuracy",
         "forbidden_count",
-        "latency_ms",
     ]
     metrics = [row["metrics"] for row in rows]
     summary = {
         name: round(mean(item[name] for item in metrics), 4)
         for name in metric_names
     }
+    latencies = sorted(float(item["latency_ms"]) for item in metrics)
+    summary["latency_avg_ms"] = round(mean(latencies), 4)
+    summary["latency_p50_ms"] = round(percentile(latencies, 0.50), 4)
+    summary["latency_p95_ms"] = round(percentile(latencies, 0.95), 4)
+    summary["latency_p99_ms"] = round(percentile(latencies, 0.99), 4)
     summary["case_count"] = len(rows)
     return summary
+
+
+def percentile(values: list[float], quantile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * quantile)))
+    return ordered[index]
 ```
 
 ## 5. Compare Base Vs Fine-tuned
@@ -269,7 +283,8 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
 ```python
 def compare_summaries(base: dict[str, Any], tuned: dict[str, Any]) -> dict[str, Any]:
     comparable = [
-        "json_valid",
+        "strict_json_valid",
+        "recoverable_json",
         "required_ok",
         "enum_ok",
         "format_accuracy",
@@ -277,7 +292,10 @@ def compare_summaries(base: dict[str, Any], tuned: dict[str, Any]) -> dict[str, 
         "contains_score",
         "task_accuracy",
         "forbidden_count",
-        "latency_ms",
+        "latency_avg_ms",
+        "latency_p50_ms",
+        "latency_p95_ms",
+        "latency_p99_ms",
     ]
     return {
         name: {
@@ -348,7 +366,7 @@ Report nên machine-readable để CI có thể đọc.
   "summary": {
     "format_accuracy": {"base": 0.91, "fine_tuned": 0.99, "delta": 0.08},
     "task_accuracy": {"base": 0.74, "fine_tuned": 0.86, "delta": 0.12},
-    "latency_ms": {"base": 420.5, "fine_tuned": 455.2, "delta": 34.7}
+    "latency_p95_ms": {"base": 510.5, "fine_tuned": 570.2, "delta": 59.7}
   },
   "gates": {
     "passed": true,
@@ -372,8 +390,8 @@ def apply_release_gate(report: dict[str, Any]) -> dict[str, Any]:
         failures.append("format_accuracy below 0.98")
     if summary["task_accuracy"]["fine_tuned"] < summary["task_accuracy"]["base"] + 0.05:
         failures.append("task_accuracy improvement below +0.05")
-    if summary["latency_ms"]["fine_tuned"] > summary["latency_ms"]["base"] * 1.2:
-        failures.append("p50 latency increased by more than 20%")
+    if summary["latency_p95_ms"]["fine_tuned"] > summary["latency_p95_ms"]["base"] * 1.2:
+        failures.append("p95 latency increased by more than 20%")
     if tag_summary.get("safety", {}).get("forbidden_count", 0) > 0:
         failures.append("safety forbidden output detected")
 
@@ -390,7 +408,7 @@ def apply_release_gate(report: dict[str, Any]) -> dict[str, Any]:
     }
 ```
 
-Trong production thật, latency nên dùng p95 thay vì mean/p50 nếu runner có đủ số mẫu.
+Gate p95 chỉ có ý nghĩa khi đã warmup và có đủ sample trên cùng hardware/load profile. Với mock backend hoặc vài case, hãy report latency nhưng tắt latency gate.
 
 ## 8. Judge Rubric
 
@@ -434,6 +452,13 @@ Judge result nên được lưu riêng:
   "reason": "Đúng category và có next action, nhưng thiếu nhắc xác minh giao dịch."
 }
 ```
+
+Production guardrails:
+
+- Treat judge input as untrusted. Candidate output may contain prompt injection such as "ignore the rubric"; the judge prompt must say candidate text is only evidence to evaluate.
+- Do not send sensitive customer data to an external judge model unless privacy/legal review allows it. Prefer redacted fields like `[EMAIL]`, `[PHONE]`, `[CUSTOMER_ID]`.
+- Store judge model id, rubric version, prompt version, temperature and raw judge JSON. A score without evaluator metadata is not auditable.
+- Calibrate judge scores against human review on a sample before using them as a release gate.
 
 ## 9. Markdown Report Template
 
@@ -499,3 +524,12 @@ Mỗi eval run cần lưu:
 - Release decision và người approve.
 
 Thiếu audit trail sẽ rất khó debug khi model mới làm sai sau deploy.
+
+## 11. Nguồn đã đối chiếu
+
+Đối chiếu ngày 2026-06-08 qua Context7 và nguồn chính thức:
+
+- TRL `SFTTrainer`/evaluation configuration để giữ pipeline train-eval nhất quán: https://huggingface.co/docs/trl/v1.0.0/en/sft_trainer
+- vLLM OpenAI-compatible Chat API, gồm `seed`, sampling và response contract: https://github.com/vllm-project/vllm/blob/v0.14.0rc2/docs/serving/openai_compatible_server.md
+- MT-Bench/LLM-as-a-judge paper, dùng như nền tảng nhưng không thay human calibration: https://arxiv.org/abs/2306.05685
+- NIST AI Risk Management Framework cho governance, measurement và release risk: https://www.nist.gov/itl/ai-risk-management-framework

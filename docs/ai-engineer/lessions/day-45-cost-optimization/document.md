@@ -23,6 +23,7 @@ Ví dụ `pricing.config.json`:
   "pricing_version": "provider-pricing-2026-05-10",
   "currency": "USD",
   "token_unit": 1000000,
+  "batch_multiplier": "0.5",
   "llm_models": {
     "llm-small": {
       "input_per_1m": "0.1500",
@@ -89,6 +90,7 @@ Trace log nên là JSONL, mỗi dòng là một request hoặc một job item:
   "prompt_version": "rag-answer.v4",
   "corpus_version": "policy-2026-05",
   "is_batch": false,
+  "usage_includes_retries": true,
   "models": {
     "generator": "llm-medium",
     "embedding": "embedding-small",
@@ -129,7 +131,7 @@ Validation rules:
 - `pricing_version` trong trace phải match config hoặc được map bằng compatibility table.
 - `models.generator` bắt buộc nếu không phải semantic cache hit.
 - Nếu `semantic_cache_hit=true`, generation tokens nên bằng `0` hoặc trace phải giải thích vì sao vẫn gọi LLM.
-- Retry phải được log như cost thật, không chỉ log request cuối.
+- Retry phải được log như cost thật. Nếu một trace đại diện logical request, `usage` phải cộng dồn mọi attempt và `usage_includes_retries=true`; lựa chọn tốt hơn là lưu thêm mảng attempt để audit.
 
 ## 4. Cost estimate table
 
@@ -413,6 +415,19 @@ def per_token_cost(tokens: Decimal, price_per_1m: Decimal, multiplier: Decimal) 
 def calculate_trace_cost(trace: dict, pricing: dict) -> CostBreakdown:
     usage = trace.get("usage", {})
     models = trace.get("models", {})
+
+    trace_pricing_version = require(trace, "pricing_version")
+    if trace_pricing_version != pricing.get("pricing_version"):
+        raise ValueError(
+            f"Pricing version mismatch in trace {trace.get('trace_id')}: "
+            f"{trace_pricing_version} != {pricing.get('pricing_version')}"
+        )
+
+    retry_count = int(trace.get("retry", {}).get("count", 0) or 0)
+    if retry_count > 0 and not trace.get("usage_includes_retries", False):
+        raise ValueError(
+            f"Trace {trace.get('trace_id')} has retries but usage does not include all attempts"
+        )
 
     semantic_cache_hit = bool(trace.get("cache", {}).get("semantic_cache_hit", False))
     batch_multiplier = Decimal("1")
@@ -747,7 +762,7 @@ Có/không dùng được trong production? Điều kiện còn thiếu là gì?
 
 ## 12. Tài liệu tham khảo provider-specific
 
-- OpenAI Prompt Caching docs: https://platform.openai.com/docs/guides/prompt-caching
-- OpenAI Batch API docs: https://platform.openai.com/docs/guides/batch/
+- OpenAI Prompt Caching docs: https://developers.openai.com/api/docs/guides/prompt-caching
+- OpenAI Batch API docs: https://developers.openai.com/api/docs/guides/batch
 
 Các link trên dùng để kiểm tra behavior hiện tại của OpenAI. Khi triển khai thật, vẫn cần đối chiếu provider đang dùng, model cụ thể, data retention policy và pricing page tại thời điểm release.

@@ -38,8 +38,10 @@ Ví dụ 5 dòng đầu:
 {"id":"api_002","question":"Loi ERR-429 co nghia la gi?","expected_answer":"ERR-429 nghĩa là vượt rate limit; client nên backoff và retry theo header Retry-After.","expected_chunk_ids":["product_api_docs:v2026-03:chunk_004"],"relevance":{"product_api_docs:v2026-03:chunk_004":3},"must_cite":["product_api_docs:v2026-03:chunk_004"],"difficulty":"easy","tags":["api","no-diacritic","error-code"],"expected_behavior":"answer","user_context":{"tenant_id":"company_a","roles":["developer"]}}
 {"id":"sales_004","question":"Có được hứa custom SLA qua email không?","expected_answer":"Không. Custom SLA phải được Legal và Support leadership duyệt trong hợp đồng.","expected_chunk_ids":["sales_handbook:v2026-01:chunk_007","support_sla_policy:v2026-01:chunk_007"],"relevance":{"sales_handbook:v2026-01:chunk_007":3,"support_sla_policy:v2026-01:chunk_007":2},"must_cite":["sales_handbook:v2026-01:chunk_007","support_sla_policy:v2026-01:chunk_007"],"difficulty":"hard","tags":["sales","sla","multi-hop"],"expected_behavior":"answer","user_context":{"tenant_id":"company_a","roles":["sales"]}}
 {"id":"no_answer_001","question":"Công ty có chính sách mua xe cho nhân viên không?","expected_answer":"Không đủ thông tin trong corpus mẫu.","expected_chunk_ids":[],"relevance":{},"must_cite":[],"difficulty":"easy","tags":["no-answer","hr","abstain"],"expected_behavior":"abstain","user_context":{"tenant_id":"company_a","roles":["employee"]}}
-{"id":"acl_003","question":"User company B hỏi chính sách nghỉ phép company A thì sao?","expected_answer":"Không được leak dữ liệu company A; phải chỉ dùng corpus của tenant company B hoặc nói không có quyền/thông tin.","expected_chunk_ids":["hr_leave_policy:v2026-01:chunk_003"],"relevance":{"hr_leave_policy:v2026-01:chunk_003":3},"must_cite":[],"difficulty":"hard","tags":["acl","tenant","security"],"expected_behavior":"permission_denied","user_context":{"tenant_id":"company_b","roles":["employee"]}}
+{"id":"acl_003","question":"User company B hỏi chính sách nghỉ phép company A thì sao?","expected_answer":"Không được leak dữ liệu company A; phải chỉ dùng corpus của tenant company B hoặc nói không có quyền/thông tin.","expected_chunk_ids":[],"forbidden_chunk_ids":["hr_leave_policy:v2026-01:chunk_003"],"relevance":{},"must_cite":[],"difficulty":"hard","tags":["acl","tenant","security"],"expected_behavior":"permission_denied","user_context":{"tenant_id":"company_b","roles":["employee"]}}
 ```
+
+`forbidden_chunk_ids` khác `expected_chunk_ids`: đây là các chunk mà auth context hiện tại tuyệt đối không được thấy. Nếu chúng xuất hiện trong retrieved candidates, context hoặc citations, release gate phải fail ngay.
 
 ## 3. RAG output JSONL
 
@@ -76,6 +78,7 @@ class GoldenCase:
     question: str
     expected_answer: str
     expected_chunk_ids: list[str]
+    forbidden_chunk_ids: list[str]
     relevance: dict[str, int]
     must_cite: list[str]
     difficulty: str
@@ -94,6 +97,7 @@ class GoldenCase:
             question=data["question"],
             expected_answer=data.get("expected_answer", ""),
             expected_chunk_ids=expected_chunk_ids,
+            forbidden_chunk_ids=list(data.get("forbidden_chunk_ids") or []),
             relevance={str(k): int(v) for k, v in relevance.items()},
             must_cite=list(data.get("must_cite") or []),
             difficulty=data.get("difficulty", "unknown"),
@@ -146,8 +150,7 @@ def recall_at_k(ranked_ids: list[str], relevant: set[str], k: int) -> float | No
 def precision_at_k(ranked_ids: list[str], relevant: set[str], k: int) -> float | None:
     if not relevant:
         return None
-    denom = min(k, max(len(ranked_ids), 1))
-    return len(relevant.intersection(ranked_ids[:k])) / denom
+    return len(relevant.intersection(ranked_ids[:k])) / k
 
 
 def mrr_at_k(ranked_ids: list[str], relevant: set[str], k: int) -> float | None:
@@ -200,7 +203,7 @@ def citation_correctness(case: GoldenCase, citations: list[str], context_ids: li
     context_set = set(context_ids)
 
     if case.expected_behavior in {"abstain", "permission_denied"}:
-        return 1.0 if not citation_set or citation_set.issubset(context_set) else 0.0
+        return 1.0 if not citation_set else 0.0
 
     if not case.must_cite:
         return 1.0 if citation_set.issubset(context_set) else 0.0
@@ -237,7 +240,9 @@ def evaluate_one(case: GoldenCase, output: dict[str, Any]) -> dict[str, Any]:
     context = chunk_ids(output.get("context_chunks", []))
     citations = chunk_ids(output.get("citations", []))
     relevant = set(case.expected_chunk_ids)
+    forbidden = set(case.forbidden_chunk_ids)
     answer = str(output.get("answer") or "")
+    exposed_forbidden = forbidden.intersection(retrieved + context + citations)
 
     metrics: dict[str, float | None] = {}
     for k in K_VALUES:
@@ -250,6 +255,7 @@ def evaluate_one(case: GoldenCase, output: dict[str, Any]) -> dict[str, Any]:
     metrics["context_recall"] = context_recall(context, relevant)
     metrics["citation_correctness"] = citation_correctness(case, citations, context)
     metrics["behavior_score"] = behavior_score(case, answer)
+    metrics["security_pass"] = 1.0 if not exposed_forbidden else 0.0
 
     latency = output.get("latency_ms") or {}
     metrics["latency_end_to_end_ms"] = float(latency.get("end_to_end", 0.0) or 0.0)
@@ -264,6 +270,8 @@ def evaluate_one(case: GoldenCase, output: dict[str, Any]) -> dict[str, Any]:
         failed_checks.append("bad_citation")
     if metrics["behavior_score"] < 1.0:
         failed_checks.append("wrong_behavior")
+    if exposed_forbidden:
+        failed_checks.append("forbidden_chunk_exposure")
 
     return {
         "query_id": case.id,
@@ -276,6 +284,7 @@ def evaluate_one(case: GoldenCase, output: dict[str, Any]) -> dict[str, Any]:
         "retrieved_ids": retrieved,
         "context_ids": context,
         "citations": citations,
+        "forbidden_exposed": sorted(exposed_forbidden),
     }
 
 
@@ -321,13 +330,13 @@ def markdown_report(results: dict[str, list[dict[str, Any]]]) -> str:
     lines.append("")
     lines.append("## Aggregate")
     lines.append("")
-    lines.append("| Config | Cases | Recall@10 | MRR@10 | NDCG@10 | Context recall | Citation correctness | Behavior score | Failed case rate | p95 latency ms |")
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("| Config | Cases | Recall@10 | MRR@10 | NDCG@10 | Context recall | Citation correctness | Behavior score | Security pass | Failed case rate | p95 latency ms |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 
     for config_id, rows in sorted(results.items()):
         summary = aggregate_with_latency(rows)
         lines.append(
-            "| {config} | {cases} | {recall} | {mrr} | {ndcg} | {context} | {citation} | {behavior} | {failed} | {latency} |".format(
+            "| {config} | {cases} | {recall} | {mrr} | {ndcg} | {context} | {citation} | {behavior} | {security} | {failed} | {latency} |".format(
                 config=config_id,
                 cases=len(rows),
                 recall=fmt(summary.get("recall@10")),
@@ -336,6 +345,7 @@ def markdown_report(results: dict[str, list[dict[str, Any]]]) -> str:
                 context=fmt(summary.get("context_recall")),
                 citation=fmt(summary.get("citation_correctness")),
                 behavior=fmt(summary.get("behavior_score")),
+                security=fmt(summary.get("security_pass")),
                 failed=fmt(summary.get("failed_case_rate")),
                 latency=fmt(summary.get("p95_latency_ms")),
             )
@@ -358,18 +368,19 @@ def markdown_report(results: dict[str, list[dict[str, Any]]]) -> str:
     lines.append("")
     lines.append("## Failed Queries")
     lines.append("")
-    lines.append("| Config | Query ID | Expected behavior | Failed checks | Retrieved top 3 | Context IDs | Citations |")
-    lines.append("|---|---|---|---|---|---|---|")
+    lines.append("| Config | Query ID | Expected behavior | Failed checks | Forbidden exposed | Retrieved top 3 | Context IDs | Citations |")
+    lines.append("|---|---|---|---|---|---|---|---|")
 
     for config_id, rows in sorted(results.items()):
         failed_rows = [row for row in rows if row["failed_checks"]]
         for row in failed_rows[:30]:
             lines.append(
-                "| {config} | {query_id} | {behavior} | {checks} | {retrieved} | {context} | {citations} |".format(
+                "| {config} | {query_id} | {behavior} | {checks} | {forbidden} | {retrieved} | {context} | {citations} |".format(
                     config=config_id,
                     query_id=row["query_id"],
                     behavior=row["expected_behavior"],
                     checks=", ".join(row["failed_checks"]),
+                    forbidden=", ".join(row["forbidden_exposed"]),
                     retrieved=", ".join(row["retrieved_ids"][:3]),
                     context=", ".join(row["context_ids"]),
                     citations=", ".join(row["citations"]),
@@ -394,8 +405,10 @@ def check_release_gate(rows: list[dict[str, Any]], gates: dict[str, float]) -> t
             failures.append(f"{metric}: {value:.3f} < {threshold}")
 
     critical_failures = [
-        row for row in rows
-        if "acl" in row["tags"] and row["failed_checks"]
+        row
+        for row in rows
+        if "forbidden_chunk_exposure" in row["failed_checks"]
+        or ("acl" in row["tags"] and row["failed_checks"])
     ]
     if critical_failures:
         failures.append(f"acl critical failures: {len(critical_failures)}")
@@ -440,6 +453,7 @@ def main() -> None:
         "mrr@10": 0.70,
         "citation_correctness": 0.95,
         "behavior_score": 0.90,
+        "security_pass": 1.0,
         "p95_latency_ms": 6000.0,
     }
 
@@ -497,15 +511,20 @@ Nguyên tắc:
 
 RAGAS phù hợp khi bạn đã có dataset gồm question, answer, contexts và reference answer.
 
+Đoạn dưới đây dùng workflow `evaluate()` của RAGAS v0.3. Pin `ragas==0.3.*`; RAGAS v0.4 chuyển sang experiment architecture nên cần migration thay vì nâng version mù:
+
 ```python
+from langchain_openai import ChatOpenAI
 from ragas import evaluate
+from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 
+evaluator_llm = LangchainLLMWrapper(ChatOpenAI(model="your-judge-model"))
 metrics = [
-    ContextPrecision(),
-    ContextRecall(),
-    Faithfulness(),
-    AnswerRelevancy(),
+    ContextPrecision(llm=evaluator_llm),
+    ContextRecall(llm=evaluator_llm),
+    Faithfulness(llm=evaluator_llm),
+    AnswerRelevancy(llm=evaluator_llm),
 ]
 
 result = evaluate(dataset=ragas_dataset, metrics=metrics)
@@ -515,6 +534,7 @@ scores = result.to_pandas()
 Khi dùng trong production workflow:
 
 - Pin version của `ragas`.
+- Khi lên v0.4+, chuyển sang experiment workflow theo migration guide.
 - Lưu dataset columns và raw score.
 - So sánh RAGAS score với human labels trên một subset.
 - Không thay thế qrels-based Recall@k/MRR/NDCG bằng LLM judge.

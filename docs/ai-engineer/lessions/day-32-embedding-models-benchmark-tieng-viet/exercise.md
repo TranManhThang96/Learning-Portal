@@ -19,10 +19,16 @@ Bạn sẽ viết một benchmark nhỏ nhưng có cấu trúc gần production:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install "pydantic>=2" sentence-transformers numpy pandas tabulate
+pip install "pydantic>=2" "sentence-transformers>=5" numpy pandas tabulate
 ```
 
 Nếu máy yếu, bắt đầu với model nhỏ hơn. Nếu có GPU, cài PyTorch đúng CUDA theo môi trường của bạn trước.
+
+Lưu ý cho người mới:
+
+- Script bên dưới dùng Pydantic v2 (`field_validator`) và API hiện tại của `sentence-transformers`.
+- `tabulate` cần cho `DataFrame.to_markdown()` khi in bảng kết quả.
+- Lần đầu chạy model sẽ tải weights về máy. Nếu máy yếu, hãy chạy thử một model nhỏ trước, sau đó mới thêm model lớn như `BAAI/bge-m3`.
 
 ## 2. Chọn 3 models
 
@@ -157,52 +163,53 @@ class ModelConfig:
     name: str
     batch_size: int = 16
     normalize: bool = True
+    query_prefix: str = ""
+    document_prefix: str = ""
 
-    @property
-    def uses_e5_prefix(self) -> bool:
-        return "e5" in self.name.lower()
-
-    @property
-    def uses_bge_instruction(self) -> bool:
-        return "bge" in self.name.lower()
+    @classmethod
+    def for_model(cls, name: str) -> "ModelConfig":
+        if "e5" in name.lower():
+            return cls(name=name, query_prefix="query: ", document_prefix="passage: ")
+        return cls(name=name)
 
 
 class SentenceTransformerEmbedder:
     def __init__(self, config: ModelConfig) -> None:
         self.config = config
         self.model = SentenceTransformer(config.name)
-        self.dimension = int(self.model.get_sentence_embedding_dimension())
+        dimension = self.model.get_embedding_dimension()
+        if dimension is None:
+            raise ValueError(f"Cannot determine embedding dimension for {config.name}")
+        self.dimension = int(dimension)
 
     def _format(self, texts: list[str], kind: str) -> list[str]:
-        if self.config.uses_e5_prefix:
-            prefix = "query: " if kind == "query" else "passage: "
-            return [prefix + text for text in texts]
-        if self.config.uses_bge_instruction and kind == "query":
-            instruction = "Represent this sentence for searching relevant passages: "
-            return [instruction + text for text in texts]
-        return texts
+        prefix = self.config.query_prefix if kind == "query" else self.config.document_prefix
+        return [prefix + text for text in texts] if prefix else texts
 
     def encode(self, texts: list[str], kind: str) -> np.ndarray:
         formatted = self._format(texts, kind)
-        vectors = self.model.encode(
-            formatted,
-            batch_size=self.config.batch_size,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
-        vectors = np.asarray(vectors, dtype=np.float32)
-        if self.config.normalize:
-            vectors = normalize_rows(vectors)
-        return vectors
+        common = {
+            "batch_size": self.config.batch_size,
+            "convert_to_numpy": True,
+            "normalize_embeddings": self.config.normalize,
+            "show_progress_bar": False,
+        }
+
+        # Prefix tường minh (như E5) dùng encode() để tránh double-prefix.
+        # Các model còn lại dùng retrieval API hiện hành để tận dụng prompt/task
+        # được đóng gói trong model nếu có.
+        if self.config.query_prefix or self.config.document_prefix:
+            vectors = self.model.encode(inputs=formatted, **common)
+        elif kind == "query":
+            vectors = self.model.encode_query(inputs=formatted, **common)
+        else:
+            vectors = self.model.encode_document(inputs=formatted, **common)
+
+        return np.asarray(vectors, dtype=np.float32)
 
 
 def normalize_unicode(text: str) -> str:
     return unicodedata.normalize("NFC", text).strip()
-
-
-def normalize_rows(vectors: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    return vectors / np.clip(norms, 1e-12, None)
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -249,6 +256,7 @@ def rank_documents(
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     doc_texts = [normalize_unicode(f"{doc.title}\n{doc.text}") for doc in docs]
     doc_vectors = embedder.encode(doc_texts, kind="passage")
+    embedder.encode([normalize_unicode(queries[0].query)], kind="query")
 
     rows: list[dict[str, object]] = []
     latencies_ms: list[float] = []
@@ -343,7 +351,7 @@ def main() -> None:
 
     for model_name in args.models:
         print(f"Running benchmark for {model_name}")
-        config = ModelConfig(name=model_name)
+        config = ModelConfig.for_model(model_name)
         embedder = SentenceTransformerEmbedder(config)
         detail, summary = rank_documents(embedder, docs, queries, top_k=TOP_K)
         write_report(output_dir, model_name, detail, summary)
@@ -370,6 +378,15 @@ Chạy model tùy chọn:
 python benchmark_embeddings_day32.py \
   --models sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 intfloat/multilingual-e5-base BAAI/bge-m3
 ```
+
+Nếu máy không có GPU hoặc RAM hạn chế, chạy smoke test trước:
+
+```bash
+python benchmark_embeddings_day32.py \
+  --models sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+```
+
+Sau khi smoke test chạy được, thêm từng model một để dễ biết model nào chậm, lỗi tải weights hoặc vượt tài nguyên.
 
 Output:
 

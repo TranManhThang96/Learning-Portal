@@ -245,3 +245,11 @@ Restore drill:
 - [ ] Có dashboard p95/p99 latency, error rate, vector count.
 - [ ] Có cost estimate theo growth 6-12 tháng.
 
+## 14. Nguồn Kỹ Thuật Đã Đối Chiếu
+
+- [Qdrant Python client](https://github.com/qdrant/qdrant-client): `create_collection`, `create_payload_index`, `upsert` và universal query API `query_points`.
+- [Qdrant filtering](https://qdrant.tech/documentation/concepts/filtering/): payload conditions, `must`/`should` và array matching.
+- [Qdrant points](https://qdrant.tech/documentation/concepts/points/): point ID hợp lệ là unsigned integer hoặc UUID; business `chunk_id` nên nằm trong payload.
+- [pgvector](https://github.com/pgvector/pgvector): distance operators, HNSW/IVFFlat, filtered query và iterative index scans.
+
+Các config trong bài là điểm bắt đầu để benchmark, không phải giá trị mặc định cho mọi workload. Hãy pin version image/package đã kiểm thử trong project thật và chạy restore/load test trước production.

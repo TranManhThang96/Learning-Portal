@@ -367,8 +367,14 @@ Không trộn embedding từ nhiều model/dimension trong cùng collection nế
 Vector record cần payload đủ filter và citation:
 
 ```python
-from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import PointStruct
+from uuid import NAMESPACE_URL, uuid5
+
+from qdrant_client import AsyncQdrantClient, models
+
+
+def qdrant_point_id(chunk: Chunk) -> str:
+    return str(uuid5(NAMESPACE_URL, f"{chunk.index_version}:{chunk.id}"))
+
 
 class VectorStore:
     def __init__(self, client: AsyncQdrantClient, collection: str) -> None:
@@ -379,8 +385,8 @@ class VectorStore:
         points = []
         for chunk, vector in zip(chunks, vectors, strict=True):
             points.append(
-                PointStruct(
-                    id=chunk.id,
+                models.PointStruct(
+                    id=qdrant_point_id(chunk),
                     vector=vector,
                     payload={
                         "tenant_id": chunk.tenant_id,
@@ -401,7 +407,42 @@ class VectorStore:
         await self.client.upsert(collection_name=self.collection, points=points, wait=True)
 ```
 
-Ở production, không nên chỉ lưu text trong Vector DB. Hãy lưu metadata/chunks trong database chính để query trace, delete, audit và backup dễ hơn.
+Qdrant point id nên là unsigned integer hoặc UUID string. Đừng dùng `chunk_id` dạng `document:v1:chunk_001` làm point id nếu nó không phải UUID hợp lệ; hãy giữ `chunk_id` trong payload và database chính để citation, trace, delete, audit và backup dễ hơn.
+
+Collection phải được tạo với dimension và distance metric đúng với embedding model:
+
+```python
+async def create_dense_collection(
+    client: AsyncQdrantClient,
+    collection: str,
+    vector_size: int,
+) -> None:
+    await client.create_collection(
+        collection_name=collection,
+        vectors_config=models.VectorParams(
+            size=vector_size,
+            distance=models.Distance.COSINE,
+        ),
+    )
+```
+
+Trong deployment thật, migration job chịu trách nhiệm tạo collection/index/payload indexes. API process không nên tự ý recreate collection khi startup, vì sai dimension hoặc race condition có thể phá active index.
+
+### 7.6 Nhất quán giữa metadata, dense index và sparse index
+
+Ba nơi lưu dữ liệu không có transaction ACID chung. Flow `upsert Qdrant -> update BM25 -> insert Postgres` có thể fail giữa chừng và tạo partial index.
+
+Baseline an toàn:
+
+1. Ghi `documents.status=processing` và chunks metadata trong Postgres.
+2. Ghi một ingestion job/outbox có `document_id`, `index_version`, `content_hash`.
+3. Worker upsert dense và sparse index bằng idempotency key.
+4. Verify số chunk và index version ở cả hai store.
+5. Chỉ chuyển `status=indexed` khi mọi bước thành công.
+6. Nếu fail, giữ status `failed`/`retrying`; query path chỉ đọc `active_index_version` và `deleted=false`.
+7. Reconciliation job định kỳ tìm orphan vectors, missing sparse records và stale document status.
+
+Không dùng distributed transaction chỉ để "trông production". Outbox + idempotent worker + reconciliation thường đơn giản và vận hành tốt hơn cho indexing pipeline.
 
 ## 8. Query pipeline step by step
 
@@ -448,7 +489,7 @@ class QueryResponse(BaseModel):
     trace_id: str
     answer_status: str
     latency_ms: dict[str, int]
-    token_usage: dict[str, int] = {}
+    token_usage: dict[str, int] = Field(default_factory=dict)
     estimated_cost_usd: float | None = None
 ```
 
@@ -485,6 +526,79 @@ merged = reciprocal_rank_fusion([dense_results, sparse_results], k=60)
 reranked = rerank(query, merged[:50])
 context = reranked[:8]
 ```
+
+Với Qdrant hiện hành, có hai lựa chọn:
+
+1. Giữ BM25/Postgres FTS/Tantivy riêng rồi merge RRF trong application. Cách này phù hợp khi lexical engine cần analyzer, phrase query và BM25 tuning chuyên sâu.
+2. Lưu named dense + sparse vectors trong Qdrant và dùng universal `query_points` với `Prefetch` + `FusionQuery(Fusion.RRF)`. Cách này giảm một network hop và giữ fusion trong một engine.
+
+Ví dụ native dense+sparse RRF bằng Qdrant:
+
+```python
+async def create_native_hybrid_collection(
+    client: AsyncQdrantClient,
+    collection: str,
+    dense_size: int,
+) -> None:
+    await client.create_collection(
+        collection_name=collection,
+        vectors_config={
+            "dense": models.VectorParams(
+                size=dense_size,
+                distance=models.Distance.COSINE,
+            )
+        },
+        sparse_vectors_config={
+            "sparse": models.SparseVectorParams(),
+        },
+    )
+
+
+async def qdrant_hybrid_search(
+    client: AsyncQdrantClient,
+    collection: str,
+    dense_vector: list[float],
+    sparse_vector: models.SparseVector,
+    acl_filter: models.Filter,
+    limit: int = 20,
+):
+    result = await client.query_points(
+        collection_name=collection,
+        prefetch=[
+            models.Prefetch(
+                query=dense_vector,
+                using="dense",
+                filter=acl_filter,
+                limit=50,
+            ),
+            models.Prefetch(
+                query=sparse_vector,
+                using="sparse",
+                filter=acl_filter,
+                limit=50,
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        limit=limit,
+        with_payload=True,
+    )
+    return result.points
+```
+
+Khi dùng named vectors, upsert cũng phải ghi đúng tên:
+
+```python
+point = models.PointStruct(
+    id="550e8400-e29b-41d4-a716-446655440000",
+    vector={
+        "dense": dense_vector,
+        "sparse": sparse_vector,
+    },
+    payload=payload,
+)
+```
+
+`acl_filter` phải nằm trong cả hai prefetch path. Sparse vector ở đây không tự động đồng nghĩa với BM25: bạn phải chọn sparse encoder/indexing strategy và benchmark nó với BM25 baseline. Không trộn collection anonymous-dense của section 7.5 với query `using="dense"`; đó là hai schema khác nhau.
 
 RRF implementation:
 

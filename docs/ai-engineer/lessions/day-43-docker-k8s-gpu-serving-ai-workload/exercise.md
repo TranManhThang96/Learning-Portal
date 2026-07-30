@@ -464,17 +464,22 @@ spec:
             limits:
               cpu: "2"
               memory: "4Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 30
 ```
 
@@ -522,6 +527,8 @@ metadata:
     app: model-server
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: model-server
@@ -555,26 +562,37 @@ spec:
               cpu: "8"
               memory: "24Gi"
               nvidia.com/gpu: 1
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /ready
               port: http
-            initialDelaySeconds: 120
             periodSeconds: 15
             failureThreshold: 20
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 180
             periodSeconds: 30
 ```
+
+`Recreate` là lựa chọn rõ ràng cho lab chỉ có một GPU: rollout không cố schedule hai model pods cùng lúc, đổi lại có downtime. Nếu cluster có GPU dự phòng và yêu cầu zero-downtime, đổi sang `RollingUpdate`, reserve capacity và chứng minh model mới warm up trước khi nhận traffic.
 
 Kiểm tra GPU resource:
 
 ```bash
 kubectl describe node gpu-node-1 | grep -A5 "nvidia.com/gpu"
-kubectl describe pod <model-server-pod>
+MODEL_SERVER_POD="$(
+  kubectl get pods -l app=model-server \
+    -o jsonpath='{.items[0].metadata.name}'
+)"
+kubectl describe pod "${MODEL_SERVER_POD}"
 ```
 
 ## 12. Benchmark
@@ -687,7 +705,9 @@ Nộp các artifact:
 - `/ready` luôn trả `200` dù vector DB chết.
 - Dùng `latest` cho production image.
 - Kubernetes manifest không có resource requests/limits.
+- Model load chậm nhưng không có `startupProbe`, dẫn đến liveness restart loop hoặc phải dùng `initialDelaySeconds` quá lớn.
 - GPU pod thiếu `nvidia.com/gpu`.
+- GPU deployment một replica dùng rolling update dù cluster không có GPU dự phòng.
 - GPU pod có toleration nhưng không có `nodeSelector`, dẫn đến scheduling không như kỳ vọng.
 - GPU node không taint, workload thường chạy vào GPU node.
 - HPA chỉ nhìn CPU trong khi bottleneck thật là tokens/sec, queue depth hoặc VRAM.

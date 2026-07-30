@@ -38,19 +38,20 @@ Validation:
 
 | Metric | Type | Tags |
 |---|---|---|
-| `rag_request_count` | counter | tenant, status |
-| `rag_total_latency_ms` | histogram | tenant, model, prompt_version |
-| `rag_retrieve_latency_ms` | histogram | retriever |
-| `rag_rerank_latency_ms` | histogram | reranker |
-| `rag_generate_latency_ms` | histogram | model |
+| `rag_requests_total` | counter | status, model, prompt_version |
+| `rag_request_duration_seconds` | histogram | stage, model, prompt_version |
 | `rag_input_tokens` | histogram | model |
 | `rag_output_tokens` | histogram | model |
 | `rag_estimated_cost_usd` | histogram | model |
-| `rag_empty_retrieval_rate` | gauge | index_version |
-| `rag_citation_failure_count` | counter | prompt_version |
-| `rag_schema_failure_count` | counter | model |
-| `rag_guardrail_refusal_count` | counter | reason |
-| `rag_feedback_down_count` | counter | reason |
+| `rag_empty_retrieval_total` | counter | index_version |
+| `rag_citation_invalid_total` | counter | prompt_version |
+| `rag_schema_failures_total` | counter | model |
+| `rag_guardrail_refusals_total` | counter | reason |
+| `rag_feedback_down_total` | counter | reason |
+
+Không dùng `tenant_id`, `user_id`, email, question hoặc `trace_id` làm metric label.
+Chúng có cardinality cao và có thể chứa dữ liệu nhạy cảm. Để debug từng request, dùng
+trace/log đã kiểm soát quyền.
 
 ## 4. Evaluation Report Template
 
@@ -78,13 +79,18 @@ Decision: PASS / CONDITIONAL PASS / FAIL
 |---|---:|---:|---:|---|
 | Recall@5 |  |  |  |  |
 | MRR@10 |  |  |  |  |
+| Citation validity |  |  |  |  |
 | Citation correctness |  |  |  |  |
+| Faithfulness |  |  |  |  |
 | Format pass rate |  |  |  |  |
 | No-answer accuracy |  |  |  |  |
 | Prompt injection block rate |  |  |  |  |
 | ACL leak count |  |  |  |  |
+| Missing evidence count |  |  |  |  |
 | p95 latency ms |  |  |  |  |
 | Avg cost/request |  |  |  |  |
+
+Thêm cột `Applicable cases` trong report thật. `N/A` không phải pass.
 
 ## Results By Tag
 
@@ -144,3 +150,21 @@ Decision: PASS / CONDITIONAL PASS / FAIL
 - Redact comment feedback.
 - Trace detail cần role admin/support.
 - Source excerpt phải qua ACL giống query.
+
+## 8. Nguồn Kỹ Thuật Đã Xác Minh
+
+Truy cập ngày `2026-06-08`:
+
+- [OpenTelemetry signals](https://opentelemetry.io/docs/concepts/signals/):
+  phân biệt traces, metrics và logs.
+- [OpenTelemetry metrics](https://opentelemetry.io/docs/concepts/signals/metrics/):
+  counter, gauge, histogram và aggregation.
+- [OpenTelemetry logs](https://opentelemetry.io/docs/concepts/signals/logs/):
+  structured log có schema ổn định và correlation bằng trace/span IDs.
+- [Prometheus metric and label naming](https://prometheus.io/docs/practices/naming/):
+  base units, `_total` cho counter và tránh high-cardinality labels.
+- [FastAPI response models](https://fastapi.tiangolo.com/tutorial/response-model/):
+  API output contract mà UI Day 49 phải bám theo.
+
+Các nguồn trên là reference; bài học giữ implementation vendor-neutral để capstone
+có thể dùng OpenTelemetry/Prometheus hoặc backend observability tương đương.
